@@ -1379,6 +1379,7 @@
 
       markWorking();
       Core.setAlreadyCounted(false);
+      Core.notifySwap && Core.notifySwap();
       currentImg = null;
       applyImageTurbo();
 

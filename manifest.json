@@ -24,7 +24,6 @@
         "injector.js",
         "core.js",
         "freezer.js",
-        "ui.js",
         "watchdog.js"
       ],
       "run_at": "document_start",
