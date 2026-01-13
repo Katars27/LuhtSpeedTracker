@@ -1,0 +1,605 @@
+/* ============================================
+   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe
+   Полностью оптимизировано для LCP:
+   - Все тяжёлые эффекты (gradients, shadows, blur, animations, glows) отключены до LCP
+   - После LCP (класс .lcp-done на <html>) — весь неоновый розовый вайб включается мгновенно
+   - Сохраняет 100% оригинального стиля и атмосферы
+============================================ */
+
+/* Уважение prefers-reduced-motion — всегда активно */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Основные цвета (остаются всегда) */
+:root {
+  --bg: #1a1218;                  /* Тёмный сливово-фиолетовый */
+  --secondary: #241826;
+  --accent-purple: #993366;
+  --accent-pink: #ff3399;
+  --glow-yellow: #ff66aa;
+  --text: #ffd1e6;
+  --border: #cc4488;
+  --shadow: rgba(204, 68, 136, 0.4);
+  --shadow-soft: rgba(255, 51, 153, 0.18);
+}
+
+/* ================== БАЗОВЫЕ СТИЛИ ДО LCP (минимальная нагрузка на paint) ================== */
+
+/* Фон страницы — только solid color */
+body:has(#ticktock) {
+  background: var(--bg) fixed !important;
+  color: var(--text) !important;
+  font-family: 'Geist', system-ui, sans-serif !important;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Основная панель — без градиентов, blur, сложных теней */
+.luht-panel {
+  position: fixed;
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  min-width: 280px;
+  max-width: 340px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(26, 18, 24, 0.95);
+  border: 2px solid var(--border);
+  color: var(--text);
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 999999;
+  opacity: 0.85;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.luht-panel:hover { opacity: 1; }
+
+.luht-panel-paused { opacity: 0.65 !important; }
+
+/* Rows — без фона и теней */
+.luht-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+.luht-row-label { opacity: 0.75; }
+.luht-row-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Header и заголовок — без градиента */
+.luht-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.luht-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* Буст-бейдж — минимальный */
+.luht-boost-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 102, 170, 0.25);
+  border: 1px solid #ff66aa;
+  color: #000;
+  font-size: 10px;
+}
+
+/* Кнопка сброса */
+.luht-btn {
+  background: none;
+  border: 1px solid var(--border);
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--glow-yellow);
+}
+
+.luht-btn-longpress {
+  background: rgba(255, 77, 77, 0.3) !important;
+  border-color: #ff4d4d !important;
+  color: #ff4d4d !important;
+  transform: scale(1.1);
+}
+
+/* Freezer кнопка — минимальная */
+.luht-freezer-btn {
+  position: fixed !important;
+  top: calc(env(safe-area-inset-top, 20px) + 20px) !important;
+  right: 20px !important;
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 32px !important;
+  background: rgba(255, 106, 193, 0.35) !important;
+  border: 2px solid #ff6ac1 !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 1000001 !important;
+}
+
+/* Freezer панель — скрыта по умолчанию, минимальный стиль */
+.luht-freezer-panel {
+  position: fixed !important;
+  top: calc(env(safe-area-inset-top, 20px) + 86px) !important;
+  right: 20px !important;
+  width: 340px !important;
+  max-height: 70vh !important;
+  background: rgba(26, 18, 24, 0.95) !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 16px !important;
+  padding: 12px !important;
+  display: none;
+  flex-direction: column;
+  z-index: 1000000 !important;
+  overflow: hidden;
+}
+
+.luht-freezer-panel[style*="flex"] { display: flex !important; }
+
+.luht-freezer-header {
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+.luht-freezer-list {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+  max-height: calc(70vh - 60px);
+}
+
+.luht-freezer-item {
+  display: block !important;
+  padding: 10px 12px !important;
+  margin-bottom: 6px !important;
+  border-radius: 10px !important;
+  background: rgba(153, 51, 102, 0.1) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  font-size: 13px !important;
+  text-decoration: none !important;
+}
+
+.luht-freezer-item.active {
+  background: rgba(255, 51, 153, 0.25) !important;
+  border-color: #ff66aa !important;
+}
+
+/* WatchDog кнопка */
+.luht-watchdog-toggle {
+  position: fixed !important;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 20px) !important;
+  right: 20px !important;
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 28px !important;
+  background: rgba(136, 136, 255, 0.35) !important;
+  border: 2px solid #8888ff !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  z-index: 1000002 !important;
+}
+
+/* Sidebar и элементы сайта — базовые */
+body:has(#ticktock) aside {
+  height: 100vh !important;
+  width: 300px !important;
+  max-width: 300px !important;
+  box-sizing: border-box;
+  overflow-y: auto !important;
+  background: rgba(26, 18, 24, 0.96) !important;
+  border-left: 1px solid var(--border);
+  padding: 16px 16px 22px !important;
+  color: var(--text) !important;
+  font-family: 'Geist', system-ui, sans-serif !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-pink) var(--secondary);
+}
+
+body:has(#ticktock) img[alt="Image to annotate"] {
+  width: min(1000px, calc(100% - 48px)) !important;
+  height: auto !important;
+  max-height: calc(100vh - 96px) !important;
+  object-fit: contain !important;
+  border-radius: 18px !important;
+  padding: 12px !important;
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+}
+
+/* === НОВЫЙ КРУТОЙ БЕЙДЖ С ПОСЛЕДНЕЙ МЕТКОЙ === */
+body:has(#ticktock) .luht-last-label {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 16px 40px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff3399, #ff66aa, #ff3399);
+  backdrop-filter: blur(20px);
+  border: 4px solid #ff66aa;
+  box-shadow: 
+    0 0 30px rgba(255, 51, 153, 0.9),
+    0 12px 40px rgba(0, 0, 0, 0.8),
+    0 0 60px rgba(255, 102, 170, 0.6);
+  color: #000;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px) scale(0.9);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+body:has(#ticktock) .luht-last-label.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+}
+
+/* ================== ПОЛНЫЙ ВАЙБ ПОСЛЕ LCP (класс .lcp-done на <html>) ================== */
+.lcp-done body:has(#ticktock) {
+  background: radial-gradient(circle at 50% 50%, #241826, #1a1218) fixed !important;
+}
+
+.lcp-done body:has(#ticktock)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(255, 51, 153, 0.12), transparent 70%),
+    radial-gradient(circle at 70% 60%, rgba(255, 102, 170, 0.1), transparent 70%);
+  opacity: 0.8;
+  pointer-events: none;
+  animation: floatLight 20s ease-in-out infinite;
+}
+
+.lcp-done .luht-panel {
+  background: linear-gradient(135deg, rgba(255, 51, 153, 0.12), rgba(204, 68, 136, 0.12)), rgba(26, 18, 24, 0.95);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 0 0 2px var(--border),
+    0 6px 18px var(--shadow),
+    0 0 40px var(--shadow-soft),
+    inset 0 0 20px rgba(255, 51, 153, 0.12);
+}
+
+.lcp-done .luht-panel:hover {
+  opacity: 1 !important;
+  box-shadow:
+    0 0 0 3px #ff66aa,
+    0 12px 40px rgba(0,0,0,0.9),
+    0 0 80px rgba(255, 51, 153, 0.5),
+    inset 0 0 50px rgba(255, 51, 153, 0.3);
+}
+
+.lcp-done .luht-row {
+  background: rgba(255, 51, 153, 0.08);
+  border: 1px solid var(--border);
+}
+
+.lcp-done .luht-title,
+.lcp-done .luht-freezer-header {
+  background: linear-gradient(120deg, var(--accent-purple), var(--accent-pink), var(--glow-yellow));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: luhtGradientMove 8s ease infinite;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.7), 0 0 10px rgba(255, 51, 153, 0.5);
+}
+
+.lcp-done .luht-boost-badge {
+  animation: luhtPulse 1s ease-in-out infinite alternate;
+}
+
+.lcp-done .luht-row-warning .luht-row-value {
+  color: var(--glow-yellow) !important;
+  animation: luhtPulse 1.5s ease-in-out infinite alternate;
+}
+
+.lcp-done .luht-freezer-btn {
+  box-shadow: 0 4px 20px rgba(255, 51, 153, 0.5), 0 0 20px rgba(255, 102, 170, 0.3);
+  animation: subtlePulse 4s ease-in-out infinite;
+}
+
+.lcp-done .luht-freezer-btn:hover {
+  animation: none;
+  transform: translateY(-3px) scale(1.1);
+  box-shadow: 0 8px 30px rgba(255, 51, 153, 0.7);
+}
+
+.lcp-done .luht-freezer-panel {
+  background: linear-gradient(135deg, rgba(255, 51, 153, 0.15), rgba(204, 68, 136, 0.15)), rgba(26, 18, 24, 0.95) !important;
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 0 0 2px var(--border),
+    0 8px 32px rgba(0,0,0,0.6),
+    0 0 40px var(--shadow-soft),
+    inset 0 0 30px rgba(255, 51, 153, 0.12);
+  animation: freezerFadeIn 0.25s ease;
+}
+
+.lcp-done .luht-freezer-item:hover {
+  background: rgba(153, 51, 102, 0.25) !important;
+  border-color: var(--accent-pink) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px var(--shadow);
+}
+
+.lcp-done .luht-btn:hover {
+  background: rgba(153, 51, 102, 0.15);
+  transform: scale(1.05);
+  box-shadow: 0 0 12px var(--shadow);
+}
+
+.lcp-done .luht-btn:active { transform: scale(0.95); }
+
+.lcp-done .luht-btn-longpress {
+  box-shadow: 0 0 20px rgba(255, 77, 77, 0.7);
+  animation: luhtPulseRed 0.4s ease-in-out infinite alternate;
+}
+
+.lcp-done body:has(#ticktock) aside {
+  backdrop-filter: blur(20px);
+  box-shadow: inset 0 0 20px rgba(153, 51, 102, 0.15);
+}
+
+.lcp-done body:has(#ticktock) aside button[name="label"]:hover,
+.lcp-done body:has(#ticktock) aside a[href*="/queue/"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px var(--shadow);
+}
+
+.lcp-done body:has(#ticktock) img[alt="Image to annotate"] {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 22px 60px rgba(0, 0, 0, 0.9),
+    0 0 40px var(--shadow-soft) !important;
+}
+
+/* После LCP — ещё ярче и насыщеннее бейдж */
+.lcp-done body:has(#ticktock) .luht-last-label {
+  background: linear-gradient(135deg, #ff3399, #ff99cc, #ff66aa);
+  box-shadow: 
+    0 0 50px rgba(255, 51, 153, 1),
+    0 0 90px rgba(255, 102, 170, 0.8),
+    0 20px 60px rgba(0, 0, 0, 0.9);
+  animation: badgePulseAppear 0.8s ease-out;
+}
+
+/* GPU acceleration для анимированных элементов после LCP */
+.lcp-done .luht-panel,
+.lcp-done .luht-freezer-btn,
+.lcp-done .luht-boost-badge,
+.lcp-done .luht-last-label,
+.lcp-done .luht-watchdog-toggle {
+  will-change: transform, opacity, box-shadow;
+}
+
+/* ================== АНИМАЦИИ (только после LCP) ================== */
+@keyframes luhtGradientMove {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes luhtPulse {
+  from { opacity: 0.7; transform: scale(1); }
+  to   { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes luhtPulseRed {
+  from { box-shadow: 0 0 20px rgba(255, 77, 77, 0.7); }
+  to   { box-shadow: 0 0 30px rgba(255, 77, 77, 0.9); }
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes floatLight {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(20px, -20px); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes badgePulseAppear {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.8); box-shadow: 0 0 0 rgba(255, 51, 153, 0); }
+  60%  { transform: translateX(-50%) translateY(-12px) scale(1.08); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); box-shadow: 0 0 60px rgba(255, 51, 153, 0.9); }
+}
+
+@keyframes freezerFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ================== ОСТАЛЬНЫЕ СТИЛИ (всегда активны, не влияют на LCP) ================== */
+
+/* Выбранные метки и активные элементы */
+body:has(#ticktock) aside button[name="label"][aria-selected="true"] {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)) !important;
+  color: #000 !important;
+  border: none !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 20px rgba(255, 51, 153, 0.5);
+}
+
+/* Кнопки меток и очереди */
+body:has(#ticktock) aside button[name="label"],
+body:has(#ticktock) aside a[href*="/queue/"] {
+  display: block !important;
+  width: 100% !important;
+  text-align: left;
+  margin-bottom: 5px;
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  background: rgba(153, 51, 102, 0.1) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+body:has(#ticktock) aside button[name="label"]:active { transform: scale(0.95); }
+
+/* Скрытие ненужного */
+body:has(#ticktock) aside h2:nth-of-type(2),
+body:has(#ticktock) aside h2:nth-of-type(2) + div,
+body:has(#ticktock) aside h2:nth-of-type(3),
+body:has(#ticktock) aside h2:nth-of-type(3) + div,
+body:has(#ticktock) aside h2:nth-of-type(4),
+body:has(#ticktock) aside h2:nth-of-type(4) + div {
+  display: none !important;
+}
+
+/* Скроллбар */
+body:has(#ticktock) aside::-webkit-scrollbar { width: 8px; }
+body:has(#ticktock) aside::-webkit-scrollbar-track { background: var(--secondary); }
+body:has(#ticktock) aside::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--accent-pink), var(--accent-purple));
+  border-radius: 10px;
+}
+
+/* Список задач на /v2/tasks/ */
+body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
+  display: block !important;
+  padding: 14px 16px !important;
+  background: rgba(18, 18, 24, 0.98) !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #f0f0f0 !important;
+  text-decoration: none !important;
+  transition: all 0.2s ease;
+}
+
+body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
+  background: rgba(28, 28, 36, 1) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Адаптивность */
+@media (max-width: 1200px) {
+  .luht-panel {
+    left: 10px;
+    min-width: 240px;
+    font-size: 12px;
+  }
+  .luht-freezer-btn,
+  .luht-watchdog-toggle {
+    right: 10px;
+  }
+}
+
+@media (max-width: 900px) {
+  .luht-panel {
+    left: 5px;
+    transform: translateY(-50%) scale(0.9);
+  }
+}
+
+/* Страница завершения задачи — полный вайб всегда */
+body > div.flex {
+  background: linear-gradient(135deg, rgba(153,51,102,0.2), rgba(255,51,153,0.2)), rgba(26,18,24,0.85);
+  padding: 40px 24px;
+  border-radius: 20px;
+  box-shadow:
+    0 0 12px rgba(204,68,136,0.3),
+    0 12px 40px rgba(0,0,0,0.85),
+    inset 0 0 20px rgba(255,51,153,0.1);
+  max-width: 600px;
+  margin: 60px auto;
+  text-align: center;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+body > div.flex::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -30%;
+  width: 160%;
+  height: 160%;
+  background: radial-gradient(circle, rgba(255,51,153,0.1), transparent 70%);
+  animation: floatLight 25s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body > div.flex * { position: relative; z-index: 1; }
+
+body > div.flex svg { stroke: #ff3399; filter: drop-shadow(0 0 12px #ff3399); }
+body > div.flex h2 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(120deg, #993366, #ff3399, #ff66aa);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: luhtGradientMove 8s ease infinite;
+  margin-top: 16px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+body > div.flex p { margin-top: 12px; font-size: 1.125rem; color: #ffd1e6cc; }
+body > div.flex a { color: #ff66aa; font-weight: 600; text-decoration: none; transition: 0.2s ease; }
+body > div.flex a:hover { color: #ff3399; text-shadow: 0 0 6px #ff3399; }
+
+/* Speed-friendly cleanup — без transition на часто обновляемых элементах */
+.luht-row,
+.luht-btn,
+.luht-panel,
+body:has(#ticktock) .luht-last-label {
+  transition: none !important;
+}
