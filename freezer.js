@@ -71,6 +71,8 @@
   let jumpLock = false;
   let isRefreshing = false;
   let fetchCompleted = false;
+  const TASKLIST_REFRESH_TTL_MS = 5 * 60 * 1000; // 5 минут
+  let lastTaskListFetchTS = 0;
 
   let isWorking = false;
   let workTimer = null;
@@ -304,21 +306,39 @@
   }
 
   async function fetchTaskList(force = false) {
-    if (!force && fetchCompleted && taskList?.length) return taskList;
-    try {
-      const html = await fetchTextWithRetry('/v2/tasks/list/');
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const arr = parseTaskListFromDocument(doc);
-      if (arr.length) saveCache(arr);
-      fetchCompleted = true;
-      return arr;
-    } catch (e) {
-      return loadCache() || [];
-    }
+  const now = Date.now();
+
+  // если недавно уже обновляли и список есть — не долбим сервер
+  if (!force && taskList?.length && (now - lastTaskListFetchTS) < TASKLIST_REFRESH_TTL_MS) {
+    return taskList;
   }
 
+  try {
+    const html = await fetchTextWithRetry('/v2/tasks/list/');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const arr = parseTaskListFromDocument(doc);
+
+    if (arr && arr.length) {
+      saveCache(arr);
+      taskList = arr;
+      lastTaskListFetchTS = now; // только если реально получили список
+      fetchCompleted = true;
+      return arr;
+    }
+
+    // если пусто — не обновляем lastTaskListFetchTS, чтобы можно было повторить быстрее
+    return taskList?.length ? taskList : (loadCache() || []);
+
+  } catch (e) {
+    // при ошибке — не обновляем lastTaskListFetchTS, чтобы можно было повторить
+    return loadCache() || [];
+  }
+}
+
+  let panel = null;
   let lcpActivated = false;
   function activateFullVibe() {
+    if (!panel) return;
     if (lcpActivated) return;
     lcpActivated = true;
     document.documentElement.classList.add('lcp-done');
@@ -356,7 +376,7 @@
     if (!lcpActivated) activateFullVibe();
   }, 3000);
 
-  const panel = document.createElement('div');
+  panel = document.createElement('div');
   panel.className = 'luht-panel';
   panel.style.visibility = 'hidden';
   document.documentElement.appendChild(panel);
@@ -1422,31 +1442,16 @@
 
   let __luht_lastPath = location.pathname;
   setInterval(() => {
-    if (location.pathname === __luht_lastPath) return;
-    __luht_lastPath = location.pathname;
-
-    const finishedAdded = markFinishedFromUrl();
-    if (finishedAdded) {
-      removeCompletedFromCache();
-      taskList = pruneFinishedFromList(taskList || []);
-      if (taskList.length) saveCache(taskList);
-      if (isOpen) throttledUpdateList(taskList);
-      throttledUpdateHighlight();
-
-      if (!taskList || taskList.length < 3) {
-        fetchTaskList(true)
-          .then((list) => {
-            taskList = pruneFinishedFromList(list || []);
-            if (taskList.length) saveCache(taskList);
-            if (isOpen) throttledUpdateList(taskList);
-            throttledUpdateHighlight();
-          })
-          .catch(() => {});
-      }
+  if (document.hidden) return;
+  if (isOpen) return;            // чтобы не лагало при открытой панельке
+  if (isWorking) return;         // не мешать во время работы
+  fetchTaskList(false).then((list) => {
+    if (list && list.length) {
+      taskList = pruneFinishedFromList(list);
+      saveCache(taskList);
     }
-
-    if (location.pathname === '/v2/tasks/') refreshListFromCurrentPageIfTasks();
-  }, 250);
+  }).catch(()=>{});
+}, 15 * 60 * 1000);
 
   async function init() {
     removeCompletedFromCache();
