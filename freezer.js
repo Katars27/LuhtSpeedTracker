@@ -14,12 +14,7 @@
       return setTimeout(cb, 50);
     };
 
-  const AbortControllerPoly =
-    window.AbortController ||
-    class {
-      signal = {};
-      abort() {}
-    };
+  const HAS_ABORT = typeof window.AbortController === 'function';
 
   function setTextIfChanged(el, value) {
     if (!el) return;
@@ -44,13 +39,32 @@
     }, duration);
   }
 
-  function throttle(fn, delay) {
+  // trailing throttle: не теряет последнее обновление
+  function throttleTrailing(fn, delay) {
     let lastCall = 0;
+    let timeout = null;
+    let lastArgs = null;
+
     return function (...args) {
       const now = Date.now();
-      if (now - lastCall < delay) return;
-      lastCall = now;
-      return fn(...args);
+      lastArgs = args;
+
+      const remaining = delay - (now - lastCall);
+      if (remaining <= 0) {
+        lastCall = now;
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+        return fn(...args);
+      }
+
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        lastCall = Date.now();
+        timeout = null;
+        if (lastArgs) fn(...lastArgs);
+      }, remaining);
     };
   }
 
@@ -76,7 +90,7 @@
 
   let isWorking = false;
   let workTimer = null;
-  
+
   const WORK_TIMEOUT_MS = 5000;
   const REFRESH_FALLBACK_TIMEOUT = 30000;
 
@@ -89,9 +103,10 @@
   }
 
   function logError(message, error) {
-  try { console.error('[LUHT]', message, error); } catch (e) {}
-}
-
+    try {
+      console.error('[LUHT]', message, error);
+    } catch (e) {}
+  }
 
   class LRUCache {
     constructor(capacity) {
@@ -126,16 +141,16 @@
     }
   }
 
-    const finishedSync = (window.BroadcastChannel ? new BroadcastChannel('luht_finished_sync') : null);
+  const finishedSync = window.BroadcastChannel ? new BroadcastChannel('luht_finished_sync') : null;
   if (finishedSync) {
     finishedSync.onmessage = () => {
       taskList = pruneFinishedFromList(taskList || []);
       throttledUpdateList(taskList);
+      throttledUpdateHighlight();
     };
   }
 
-
-    function saveFinishedIds(ids) {
+  function saveFinishedIds(ids) {
     try {
       localStorage.setItem(FINISHED_KEY, JSON.stringify(ids));
       if (finishedSync) finishedSync.postMessage('update');
@@ -250,7 +265,8 @@
 
       links.forEach((a) => {
         const title = (a.textContent || '').trim();
-        const lower = title.toLocaleLowerCase();
+        const lower = title.toLowerCase(); // было toLocaleLowerCase()
+
         if (
           lower.includes('299') ||
           lower.includes('399') ||
@@ -269,71 +285,98 @@
         arr.push({ href, title });
       });
 
-      const currentIds = new Set(arr.map((t) => getTaskIdFromPath(t.href)).filter(Boolean));
-      const updatedFinished = finishedIds.filter((id) => !currentIds.has(id));
-      if (updatedFinished.length !== finishedIds.length) {
-        saveFinishedIds(updatedFinished);
-      }
-
       return arr;
     } catch (e) {
       return [];
     }
   }
 
+  function delay(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+  }
+
+  async function fetchWithTimeout(url, opts, timeoutMs) {
+    if (HAS_ABORT) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...opts, signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // Без AbortController: реальный таймаут через race (fetch не отменит сеть, но код перестанет ждать)
+    const timeout = new Promise((_, rej) =>
+      setTimeout(() => rej(new Error('Timeout')), timeoutMs)
+    );
+    return await Promise.race([fetch(url, opts), timeout]);
+  }
+
   async function fetchTextWithRetry(url, { tries = 3, timeoutMs = 30000 } = {}) {
     let lastErr;
     for (let attempt = 1; attempt <= tries; attempt++) {
-      const ctrl = new AbortControllerPoly();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const r = await fetch(url, {
-          method: 'GET',
-          credentials: 'include',
-          cache: 'no-store',
-          signal: ctrl.signal,
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const r = await fetchWithTimeout(
+          url,
+          {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+          },
+          timeoutMs
+        );
+        if (!r || !r.ok) throw new Error(`HTTP ${r ? r.status : 'NO_RESPONSE'}`);
         return await r.text();
       } catch (e) {
         lastErr = e;
-        await new Promise((res) => setTimeout(res, 200 * attempt));
-      } finally {
-        clearTimeout(timer);
+        await delay(200 * attempt);
       }
     }
     throw lastErr;
   }
 
   async function fetchTaskList(force = false) {
-  const now = Date.now();
+    const now = Date.now();
 
-  // если недавно уже обновляли и список есть — не долбим сервер
-  if (!force && taskList?.length && (now - lastTaskListFetchTS) < TASKLIST_REFRESH_TTL_MS) {
-    return taskList;
-  }
-
-  try {
-    const html = await fetchTextWithRetry('/v2/tasks/list/');
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    const arr = parseTaskListFromDocument(doc);
-
-    if (arr && arr.length) {
-      saveCache(arr);
-      taskList = arr;
-      lastTaskListFetchTS = now; // только если реально получили список
-      fetchCompleted = true;
-      return arr;
+    if (!force && taskList?.length && now - lastTaskListFetchTS < TASKLIST_REFRESH_TTL_MS) {
+      return taskList;
     }
 
-    // если пусто — не обновляем lastTaskListFetchTS, чтобы можно было повторить быстрее
-    return taskList?.length ? taskList : (loadCache() || []);
+    try {
+      const html = await fetchTextWithRetry('/v2/tasks/list/');
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const arr = parseTaskListFromDocument(doc);
 
-  } catch (e) {
-    // при ошибке — не обновляем lastTaskListFetchTS, чтобы можно было повторить
-    return loadCache() || [];
+      if (arr && arr.length) {
+        saveCache(arr);
+        taskList = arr;
+        lastTaskListFetchTS = now;
+        fetchCompleted = true;
+        return arr;
+      }
+
+      return taskList?.length ? taskList : loadCache() || [];
+    } catch (e) {
+      return loadCache() || [];
+    }
   }
-}
+
+  async function ensureTaskListMin(min = 5) {
+    try {
+      const current = pruneFinishedFromList(taskList || []);
+      taskList = current;
+      if (taskList.length >= min) return taskList;
+
+      const fetched = await fetchTaskList(true);
+      taskList = pruneFinishedFromList(fetched || []);
+
+      if (taskList.length) saveCache(taskList);
+      return taskList;
+    } catch (e) {
+      return pruneFinishedFromList(taskList || []);
+    }
+  }
 
   let panel = null;
   let lcpActivated = false;
@@ -520,8 +563,8 @@
         }
       });
 
-      pickerList.innerHTML = '';
-      pickerList.appendChild(fragment);
+      // было: innerHTML = '' + appendChild
+      pickerList.replaceChildren(fragment);
     } catch (e) {}
   }
 
@@ -538,9 +581,84 @@
     } catch (e) {}
   }
 
-  const throttledUpdateList = throttle(updateTaskListSmart, 200);
-  const throttledUpdateHighlight = throttle(updateActiveHighlight, 200);
-  const throttledUpdatePanel = throttle(updatePanel, 200);
+  // ---- Panel perf fixes ----
+  let lastStateSnapshot = null;
+  let lastSpeedClass = null;
+
+  function updateSpeedColor(speed) {
+    const el = r1m.row;
+    if (!el) return;
+    let cls = null;
+    if (speed >= 110) cls = 'speed-110';
+    else if (speed >= 100) cls = 'speed-100';
+    else if (speed >= 90) cls = 'speed-90';
+    else if (speed >= 80) cls = 'speed-80';
+    if (cls === lastSpeedClass) return;
+    el.classList.remove('speed-80', 'speed-90', 'speed-100', 'speed-110');
+    if (cls) el.classList.add(cls);
+    lastSpeedClass = cls;
+  }
+
+  function makePanelSnap(st) {
+    // Дешевле JSON.stringify: просто строка с числами/битами
+    return (
+      st.totalCount +
+      '|' +
+      st.c1 +
+      '|' +
+      st.c5 +
+      '|' +
+      st.c15 +
+      '|' +
+      st.c60 +
+      '|' +
+      st.streakMs +
+      '|' +
+      st.bestStreakMs +
+      '|' +
+      (st.warning ? 1 : 0) +
+      '|' +
+      (st.boost ? 1 : 0) +
+      '|' +
+      (st.paused ? 1 : 0)
+    );
+  }
+
+  function updatePanel(force = false) {
+    const st = Core.getState();
+    const snap = makePanelSnap(st);
+
+    if (!force && snap === lastStateSnapshot) return;
+    lastStateSnapshot = snap;
+
+    setTextIfChanged(rTotal.value, st.totalCount);
+    setTextIfChanged(r1m.value, st.c1);
+    setTextIfChanged(r5m.value, st.c5);
+    setTextIfChanged(r15m.value, st.c15);
+    setTextIfChanged(r60m.value, st.c60);
+
+    setTextIfChanged(rStreak.value, st.streakMs > 0 ? Core.formatDuration(st.streakMs) : '—');
+    setTextIfChanged(rBest.value, st.bestStreakMs > 0 ? Core.formatDuration(st.bestStreakMs) : '—');
+
+    r1m.row.classList.toggle('luht-row-minute-good', st.c1 >= 100);
+    r1m.row.classList.toggle('luht-row-minute-bad', st.c1 >= 90 && st.c1 < 100);
+    r1m.row.classList.toggle('luht-row-minute-ok', st.c1 >= 80 && st.c1 < 90);
+    r1m.row.classList.toggle('luht-row-warning', st.warning);
+
+    boostBadge.style.display = st.boost ? '' : 'none';
+    panel.classList.toggle('luht-panel-paused', st.paused);
+
+    setTextIfChanged(
+      rStatus.value,
+      st.paused ? 'Пауза… кликни метку' : st.boost ? '⚡ Ускоренный режим' : 'Работаю'
+    );
+
+    updateSpeedColor(st.c1);
+  }
+
+  const throttledUpdateList = throttleTrailing(updateTaskListSmart, 200);
+  const throttledUpdateHighlight = throttleTrailing(updateActiveHighlight, 200);
+  const throttledUpdatePanel = throttleTrailing(updatePanel, 200);
 
   function refreshListFromCurrentPageIfTasks() {
     if (location.pathname !== '/v2/tasks/') return false;
@@ -654,7 +772,7 @@
           fetchTaskList(true)
             .then((newList) => {
               if (newList && newList.length) {
-                taskList = newList;
+                taskList = pruneFinishedFromList(newList);
                 saveCache(taskList);
                 if (isOpen) throttledUpdateList(taskList);
                 throttledUpdateHighlight();
@@ -679,13 +797,20 @@
     });
 
     if (pickerList) {
-      pickerList.innerHTML =
-        '<div style="text-align:center;padding:20px;color:#aaa;">Загрузка списка...</div>';
+      const msg = document.createElement('div');
+      msg.style.cssText = 'text-align:center;padding:20px;color:#aaa;';
+      msg.textContent = 'Загрузка списка...';
+      pickerList.replaceChildren(msg);
     }
 
     throttledUpdateList(taskList || []);
     throttledUpdateHighlight();
-    safeRefresh(true);
+
+    myRequestIdleCallback(async () => {
+      const list = await ensureTaskListMin(5);
+      if (isOpen) throttledUpdateList(list);
+      throttledUpdateHighlight();
+    });
   }
 
   function closePicker() {
@@ -770,6 +895,32 @@
   let turboToggle = null;
   let turboIcon = null;
 
+  // image turbo cooldown (вместо "умер навсегда")
+  const TURBO_COOLDOWN_MS = 30 * 60 * 1000; // 30 минут
+  const TURBO_DEAD_TS_KEY = 'imageTurboProxyDeadTs';
+
+  function isTurboInCooldown() {
+    try {
+      const ts = Number(localStorage.getItem(TURBO_DEAD_TS_KEY) || '0');
+      if (!ts) return false;
+      return Date.now() - ts < TURBO_COOLDOWN_MS;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setTurboCooldown() {
+    try {
+      localStorage.setItem(TURBO_DEAD_TS_KEY, String(Date.now()));
+    } catch (e) {}
+  }
+
+  function clearTurboCooldown() {
+    try {
+      localStorage.removeItem(TURBO_DEAD_TS_KEY);
+    } catch (e) {}
+  }
+
   function createTurboToggle() {
     if (turboRow) return;
 
@@ -806,6 +957,8 @@
         localStorage.setItem('imageTurboEnabled', on ? 'true' : 'false');
         turboIcon.textContent = on ? '💨 Активно' : 'Выключено';
         turboIcon.style.opacity = on ? '1' : '0.5';
+
+        if (on) clearTurboCooldown();
         applyImageTurbo();
       }, 100);
     });
@@ -826,58 +979,46 @@
   }
 
   function applyImageTurbo() {
-  if (!lcpActivated) return;
+    if (!lcpActivated) return;
+    if (localStorage.getItem('imageTurboEnabled') !== 'true') return;
+    if (isTurboInCooldown()) return;
 
-  // если мы уже выяснили, что прокси не работает — не долбимся
-  if (localStorage.getItem('imageTurboProxyDead') === 'true') return;
+    const img = getCurrentImage();
+    if (!img) return;
+    if (img.dataset.webpOptimized === 'true' || img.dataset.webpOptimized === 'fail') return;
 
-  if (localStorage.getItem('imageTurboEnabled') !== 'true') return;
+    const original = img.src;
+    if (!original || original.endsWith('.webp') || original.endsWith('.svg')) return;
 
-  const img = getCurrentImage();
-  if (!img) return;
+    const width = Math.min(1600, Math.floor(window.innerWidth * 1.5));
+    const proxy = `https://wsrv.nl/?url=${encodeURIComponent(original)}&w=${width}&q=87&output=webp&fit=contain`;
 
-  // если уже оптимизировали/провалили — не повторяем
-  if (img.dataset.webpOptimized === 'true' || img.dataset.webpOptimized === 'fail') return;
+    const preload = new Image();
 
-  const original = img.src;
-  if (!original || original.endsWith('.webp') || original.endsWith('.svg')) return;
+    preload.onload = () => {
+      img.src = proxy;
+      img.dataset.webpOptimized = 'true';
+      clearTurboCooldown();
+    };
 
-  const width = Math.min(1600, Math.floor(window.innerWidth * 1.5));
-  const proxy = `https://wsrv.nl/?url=${encodeURIComponent(original)}&w=${width}&q=87&output=webp&fit=contain`;
+    preload.onerror = () => {
+      img.dataset.webpOptimized = 'fail';
 
-  const preload = new Image();
+      // Вместо "навсегда умер" — ставим кулдаун
+      setTurboCooldown();
 
-  preload.onload = () => {
-    img.src = proxy;
-    img.dataset.webpOptimized = 'true';
-  };
+      if (typeof turboIcon !== 'undefined' && turboIcon) {
+        turboIcon.textContent = 'Недоступно (временно)';
+        turboIcon.style.opacity = '0.5';
+      }
 
-  preload.onerror = () => {
-    img.dataset.webpOptimized = 'fail';
+      showToast('Image Turbo временно недоступен. Поставил кулдаун.', 2200);
 
-    // гасим навсегда (пока ты сам не включишь снова / не сбросишь)
-    try {
-      localStorage.setItem('imageTurboProxyDead', 'true');
-      localStorage.setItem('imageTurboEnabled', 'false');
-    } catch (e) {}
+      if (img.src !== original) img.src = original;
+    };
 
-    // UI-переключатель тоже гасим, если уже создан
-    if (typeof turboToggle !== 'undefined' && turboToggle) turboToggle.checked = false;
-    if (typeof turboIcon !== 'undefined' && turboIcon) {
-      turboIcon.textContent = 'Недоступно (CSP/403)';
-      turboIcon.style.opacity = '0.5';
-    }
-
-    // один раз, без спама
-    showToast('Image Turbo недоступен (CSP/доступ). Отключил.', 2200);
-
-    // откат на оригинал, если успели подменить
-    if (img.src !== original) img.src = original;
-  };
-
-  preload.src = proxy;
-}
-
+    preload.src = proxy;
+  }
 
   let resetPressTimer = null;
   let didLongPress = false;
@@ -888,66 +1029,6 @@
       clearTimeout(resetPressTimer);
       resetPressTimer = null;
     }
-  }
-
-  let lastStateSnapshot = null;
-  let lastSpeedClass = null;
-
-  function updateSpeedColor(speed) {
-    const el = r1m.row;
-    if (!el) return;
-    let cls = null;
-    if (speed >= 110) cls = 'speed-110';
-    else if (speed >= 100) cls = 'speed-100';
-    else if (speed >= 90) cls = 'speed-90';
-    else if (speed >= 80) cls = 'speed-80';
-    if (cls === lastSpeedClass) return;
-    el.classList.remove('speed-80', 'speed-90', 'speed-100', 'speed-110');
-    if (cls) el.classList.add(cls);
-    lastSpeedClass = cls;
-  }
-
-  function updatePanel(force = false) {
-    const st = Core.getState();
-    const snap = JSON.stringify({
-      totalCount: st.totalCount,
-      c1: st.c1,
-      c5: st.c5,
-      c15: st.c15,
-      c60: st.c60,
-      streakMs: st.streakMs,
-      bestStreakMs: st.bestStreakMs,
-      warning: st.warning,
-      boost: st.boost,
-      paused: st.paused,
-    });
-
-    if (!force && snap === lastStateSnapshot) return;
-    lastStateSnapshot = snap;
-
-    setTextIfChanged(rTotal.value, st.totalCount);
-    setTextIfChanged(r1m.value, st.c1);
-    setTextIfChanged(r5m.value, st.c5);
-    setTextIfChanged(r15m.value, st.c15);
-    setTextIfChanged(r60m.value, st.c60);
-
-    setTextIfChanged(rStreak.value, st.streakMs > 0 ? Core.formatDuration(st.streakMs) : '—');
-    setTextIfChanged(rBest.value, st.bestStreakMs > 0 ? Core.formatDuration(st.bestStreakMs) : '—');
-
-    r1m.row.classList.toggle('luht-row-minute-good', st.c1 >= 100);
-    r1m.row.classList.toggle('luht-row-minute-bad', st.c1 >= 90 && st.c1 < 100);
-    r1m.row.classList.toggle('luht-row-minute-ok', st.c1 >= 80 && st.c1 < 90);
-    r1m.row.classList.toggle('luht-row-warning', st.warning);
-
-    boostBadge.style.display = st.boost ? '' : 'none';
-    panel.classList.toggle('luht-panel-paused', st.paused);
-
-    setTextIfChanged(
-      rStatus.value,
-      st.paused ? 'Пауза… кликни метку' : st.boost ? '⚡ Ускоренный режим' : 'Работаю'
-    );
-
-    updateSpeedColor(st.c1);
   }
 
   function hardReset({ withTasks = false } = {}) {
@@ -970,8 +1051,7 @@
       localStorage.setItem('imageTurboEnabled', 'false');
     } catch (e) {}
 
-    try { localStorage.removeItem('imageTurboProxyDead'); } catch(e) {}
-
+    clearTurboCooldown();
 
     if (turboToggle) turboToggle.checked = false;
     if (turboIcon) {
@@ -1074,7 +1154,6 @@
     );
   }
 
-  let rDownAt = 0;
   let rTimer = null;
   let longRTriggered = false;
 
@@ -1102,6 +1181,7 @@
         return;
       }
 
+      // F5 перехват оставил как было (спорно, но ты сам так задумал)
       if (key === 'F5') {
         ev.preventDefault();
         ev.stopPropagation();
@@ -1113,7 +1193,6 @@
       if (code === 'KeyR' && !ev.ctrlKey && !ev.shiftKey && !ev.altKey) {
         ev.preventDefault();
         ev.stopPropagation();
-        rDownAt = Date.now();
         longRTriggered = false;
         rTimer = setTimeout(() => {
           longRTriggered = true;
@@ -1361,18 +1440,30 @@
     true
   );
 
-  let lastTimeUpdate = 0;
-  function updateTimeRAF() {
-    const now = Date.now();
-    if (now - lastTimeUpdate >= 1000) {
-      const st = Core.getState();
-      setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
-      setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
-      lastTimeUpdate = now;
-    }
-    requestAnimationFrame(updateTimeRAF);
+  // ---- Time update: interval 1s + visibility ----
+  let timeUpdateInterval = null;
+  function tickTimeOnce() {
+    const st = Core.getState();
+    setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
+    setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
   }
-  updateTimeRAF();
+  function startTimeUpdate() {
+    if (timeUpdateInterval) return;
+    tickTimeOnce();
+    timeUpdateInterval = setInterval(() => {
+      tickTimeOnce();
+    }, 1000);
+  }
+  function stopTimeUpdate() {
+    if (!timeUpdateInterval) return;
+    clearInterval(timeUpdateInterval);
+    timeUpdateInterval = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopTimeUpdate();
+    else startTimeUpdate();
+  });
 
   function mainUILoop() {
     if (!isWorking) {
@@ -1382,7 +1473,78 @@
     setTimeout(() => myRequestIdleCallback(mainUILoop), 200);
   }
 
+  // ---- Background scheduler: one engine ----
+  const BG = {
+    prune: { every: 60_000, last: 0 },
+    ensureMin: { every: 60_000, last: 0 },
+    rareFetch: { every: 15 * 60_000, last: 0 },
+  };
+
+  function backgroundTick() {
+    const now = Date.now();
+    if (document.hidden) return;
+    if (isWorking) return;
+
+    // prune cache/list
+    if (now - BG.prune.last >= BG.prune.every) {
+      BG.prune.last = now;
+      try {
+        removeCompletedFromCache();
+        if (taskList) {
+          taskList = pruneFinishedFromList(taskList);
+          if (isOpen) throttledUpdateList(taskList);
+          throttledUpdateHighlight();
+        }
+      } catch (e) {}
+    }
+
+    // ensure min tasks
+    if (now - BG.ensureMin.last >= BG.ensureMin.every) {
+      BG.ensureMin.last = now;
+      if ((taskList?.length ?? 0) < 5) {
+        ensureTaskListMin(5).catch(() => {});
+      }
+    }
+
+    // rare refresh list
+    if (now - BG.rareFetch.last >= BG.rareFetch.every) {
+      BG.rareFetch.last = now;
+      const cur = pruneFinishedFromList(taskList || []);
+      taskList = cur;
+      const force = taskList.length < 5;
+
+      fetchTaskList(force)
+        .then((list) => {
+          if (list && list.length) {
+            taskList = pruneFinishedFromList(list);
+            saveCache(taskList);
+            if (isOpen) throttledUpdateList(taskList);
+            throttledUpdateHighlight();
+          }
+        })
+        .catch(() => {});
+    }
+  }
+
+  let bgInterval = null;
+  function startBackground() {
+    if (bgInterval) return;
+    bgInterval = setInterval(backgroundTick, 10_000);
+  }
+  function stopBackground() {
+    if (!bgInterval) return;
+    clearInterval(bgInterval);
+    bgInterval = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopBackground();
+    else startBackground();
+  });
+
   function startLoops() {
+    startTimeUpdate();
+    startBackground();
     mainUILoop();
   }
 
@@ -1413,10 +1575,10 @@
         if (isOpen) throttledUpdateList(taskList);
         throttledUpdateHighlight();
 
-        if (!taskList || taskList.length < 3) {
-          fetchTaskList(true)
+        if (!taskList || taskList.length < 5) {
+          ensureTaskListMin(5)
             .then((list) => {
-              taskList = pruneFinishedFromList(list || []);
+              taskList = list;
               if (taskList.length) saveCache(taskList);
               if (isOpen) throttledUpdateList(taskList);
               throttledUpdateHighlight();
@@ -1439,19 +1601,6 @@
   }
 
   setupHtmxListener();
-
-  let __luht_lastPath = location.pathname;
-  setInterval(() => {
-  if (document.hidden) return;
-  if (isOpen) return;            // чтобы не лагало при открытой панельке
-  if (isWorking) return;         // не мешать во время работы
-  fetchTaskList(false).then((list) => {
-    if (list && list.length) {
-      taskList = pruneFinishedFromList(list);
-      saveCache(taskList);
-    }
-  }).catch(()=>{});
-}, 15 * 60 * 1000);
 
   async function init() {
     removeCompletedFromCache();
@@ -1479,28 +1628,17 @@
 
     setTimeout(() => {
       if (!taskList || taskList.length < 5) {
-        fetchTaskList(true)
+        ensureTaskListMin(5)
           .then((list) => {
-            if (list && list.length) {
-              taskList = pruneFinishedFromList(list);
-              saveCache(taskList);
-              if (pickerList && isOpen) throttledUpdateList(taskList);
-              throttledUpdateHighlight();
-            }
+            taskList = list;
+            if (taskList.length) saveCache(taskList);
+            if (pickerList && isOpen) throttledUpdateList(taskList);
+            throttledUpdateHighlight();
           })
           .catch(() => {});
       }
     }, 100);
   }
-
-  setInterval(() => {
-    removeCompletedFromCache();
-    if (taskList) {
-      taskList = pruneFinishedFromList(taskList);
-      if (isOpen) throttledUpdateList(taskList);
-      throttledUpdateHighlight();
-    }
-  }, 60000);
 
   window.addEventListener('beforeunload', () => {
     isRefreshing = false;
@@ -1510,7 +1648,7 @@
     luht_prevBlock = false;
   });
 
-    (async () => {
+  (async () => {
     await init();
 
     if (markFinishedFromUrl()) {
@@ -1519,6 +1657,17 @@
       if (taskList.length) saveCache(taskList);
       if (isOpen) throttledUpdateList(taskList);
       throttledUpdateHighlight();
+
+      if (!taskList || taskList.length < 5) {
+        ensureTaskListMin(5)
+          .then((list) => {
+            taskList = list;
+            if (taskList.length) saveCache(taskList);
+            if (isOpen) throttledUpdateList(taskList);
+            throttledUpdateHighlight();
+          })
+          .catch(() => {});
+      }
     }
 
     throttledUpdatePanel(true);
