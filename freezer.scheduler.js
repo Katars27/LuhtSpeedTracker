@@ -225,32 +225,54 @@
   let prevClickBlocked = false;
 
   ns.handleBack = function () {
-    ns.markWorking();
+  ns.markWorking();
 
-    // Если задача/категория завершена — пытаемся уйти в REVIEW
-    const heading = document.querySelector('h2');
-    const text = heading ? (heading.textContent || '') : '';
-    const finished = /task finished|category finished|success|completed/i.test(text);
+  const heading = document.querySelector('h2');
+  const text = heading ? (heading.textContent || '').toLowerCase() : '';
+  const finished = /task finished|category finished|success|completed/i.test(text);
 
-    if (finished) {
-      const backReviewLink =
-        document.querySelector('a[href*="/queue/last/"]') ||
-        Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').includes('Back to REVIEW'));
+  // 1) Если finished — Back to review
+  if (finished) {
+    const backReviewLink =
+      document.querySelector('a[href*="/queue/last/"]') ||
+      Array.from(document.querySelectorAll('a')).find(a =>
+        (a.textContent || '').toLowerCase().includes('back to review')
+      );
 
-      if (backReviewLink) {
-        backReviewLink.click();
-        return;
-      }
+    if (backReviewLink) {
+      backReviewLink.click();
+      return;
     }
+  }
 
-    // Иначе кликаем Prev
-    const prevBtn = document.querySelector('a[href$="/prev/"]');
-    if (prevBtn) {
-      prevBtn.click();
-      prevClickBlocked = true;
-      setTimeout(() => { prevClickBlocked = false; }, 150);
+  // 2) Обычный prev
+  const prevBtn = document.querySelector('a[href$="/prev/"]');
+  if (!prevBtn) return;
+
+  // блок двойного клика
+  if (prevClickBlocked) return;
+  prevClickBlocked = true;
+  setTimeout(() => { prevClickBlocked = false; }, 180);
+
+    // сначала правим счётчик
+  try {
+    if (ns.Core) {
+      ns.Core.backEvent();
+      ns.Core.setAlreadyCounted(false);
+      // ns.Core.registerClickActivity();  // ← УДАЛИ / НЕ ВЫЗЫВАЙ
     }
-  };
+  } catch (e) {
+    console.warn('[LUHT] backEvent failed', e);
+  }
+
+
+  // потом навигация
+  prevBtn.click();
+
+  // UI
+  if (ns.throttledUpdatePanel) ns.throttledUpdatePanel();
+};
+
 
   // ============================
   //   EVENTS: KEYBOARD
@@ -419,18 +441,6 @@
       if (!isBtn && !isPanel) ns.closePicker();
     }
 
-    // 2) блок двойного клика по Prev
-    const prevLink = ev.target.closest('a[href$="/prev/"]');
-    if (prevLink) {
-      if (prevClickBlocked) {
-        ev.stopImmediatePropagation();
-        ev.preventDefault();
-        return false;
-      }
-      prevClickBlocked = true;
-      setTimeout(() => { prevClickBlocked = false; }, 150);
-      return;
-    }
 
     // 3) метки разметки — считаем событие
     const labelBtn = ev.target.closest('button[name="label"]');
@@ -449,17 +459,6 @@
 
       if (ns.throttledUpdatePanel) ns.throttledUpdatePanel();
       return;
-    }
-
-    // 4) клик по Prev — корректируем статистику
-    if (ev.target.closest('a[href$="/prev/"]')) {
-      ns.markWorking();
-      try {
-        ns.Core.setAlreadyCounted(false);
-        ns.Core.backEvent();
-        ns.Core.registerClickActivity();
-      } catch (e) {}
-      if (ns.throttledUpdatePanel) ns.throttledUpdatePanel();
     }
   }, true);
 

@@ -145,6 +145,7 @@
     const now = Date.now();
     if (timestamps.length) timestamps.pop();
     if (totalCount > 0) totalCount--;
+    alreadyCounted = false
     maybePersist(now, true);
   }
 
