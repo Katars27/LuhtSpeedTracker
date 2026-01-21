@@ -66,7 +66,6 @@
   totalCount = parseInt(localStorage.getItem(STORAGE_TOTAL) || '0', 10) || 0;
   activeTimeMs = parseInt(localStorage.getItem(STORAGE_ACTIVE) || '0', 10) || 0;
 
-  // Нормализуем timestamps (на всякий)
   timestamps = timestamps
     .map((x) => (typeof x === 'number' ? x : parseInt(x, 10)))
     .filter((x) => Number.isFinite(x) && x > 0)
@@ -88,7 +87,6 @@
       localStorage.setItem(STORAGE_STREAK_BEST, String(bestStreakMs));
       localStorage.setItem(STORAGE_LAST_CLICK, String(lastClickTS || 0));
     } catch (e) {
-      // Не спамим
       try { console.warn('localStorage save failed:', e); } catch {}
     }
   }
@@ -110,11 +108,9 @@
   });
 
   document.addEventListener('visibilitychange', () => {
-    // при уходе в фон — сразу сохраняем (чтобы не терять)
     if (document.hidden) {
       maybePersist(Date.now(), true);
     } else {
-      // при возвращении — корректируем lastActiveTS, чтобы не прибавлять гигантский delta
       lastActiveTS = Date.now();
     }
   });
@@ -129,7 +125,7 @@
     if (totalTimeStart === 0) {
       totalTimeStart = now;
       totalTimeMs = 0;
-      maybePersist(now, true); // первый клик — force
+      maybePersist(now, true);
     }
   }
 
@@ -138,7 +134,6 @@
     timestamps.push(now);
     totalCount++;
 
-    // лимит по памяти
     if (timestamps.length > 12000) {
       timestamps.splice(0, timestamps.length - 10000);
     }
@@ -200,7 +195,6 @@
     return timestamps.length - left;
   }
 
-  // чистим только раз в 20 секунд
   let lastPruneTS = 0;
   function pruneOld(now) {
     if (now - lastPruneTS < 20000) return;
@@ -248,7 +242,7 @@
   }
 
   // ============================
-  //   MAIN TICK (без DOM, без ImageTurbo)
+  //   MAIN TICK
   // ============================
   function tick() {
     try {
@@ -256,7 +250,6 @@
       let delta = now - lastActiveTS;
       lastActiveTS = now;
 
-      // защита от огромных скачков (сон/переключение вкладки)
       if (delta < 0) delta = 0;
       if (delta > 30_000) delta = 0;
 
@@ -277,18 +270,15 @@
         totalTimeMs = now - totalTimeStart;
       }
 
-      // Авто-ресет при долгом простое
       const idleGap = totalTimeMs - activeTimeMs;
       if (idleGap > IDLE_RESET_THRESHOLD_MS) {
         resetAll();
         return;
       }
 
-      // Скорости
       const c1 = countIn(60_000, now);
       const c20 = countIn(20_000, now);
 
-      // Стрик
       if (!isPaused && c1 >= 80) {
         streakMs += delta;
         if (streakMs > bestStreakMs) bestStreakMs = streakMs;
@@ -296,7 +286,6 @@
         streakMs = 0;
       }
 
-      // Буст (гистерезис)
       if (!isPaused) {
         if (c20 >= 30) boostActive = true;
         else if (c20 <= 28) boostActive = false;
@@ -304,7 +293,6 @@
         boostActive = false;
       }
 
-      // Warning
       if (!isPaused) {
         if (c1 >= 80) {
           wasHighTempo = true;
@@ -329,20 +317,18 @@
     }
   }
 
-  // Один лёгкий интервал — и всё.
-  setInterval(tick, TICK_MS);
-
-  // ============================
-  //   OPTIONAL HOOKS (для ui/freezer)
-  // ============================
-  function notifySwap() {
-    // когда htmx свапнул новую задачу/картинку — ui/freezer может вызвать это
-    alreadyCounted = false;
+  // Не плодим интервал (на всякий)
+  if (!window.__luht_core_v2_tick) {
+    window.__luht_core_v2_tick = setInterval(tick, TICK_MS);
   }
 
   // ============================
-  //   EXPORT
+  //   OPTIONAL HOOKS
   // ============================
+  function notifySwap() {
+    alreadyCounted = false;
+  }
+
   window.LuhtSpeedCore = {
     addEvent,
     backEvent,

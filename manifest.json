@@ -23,7 +23,17 @@
       "js": [
         "injector.js",
         "core.js",
-        "freezer.js",
+
+        "freezer.constants.js",
+        "freezer.utils.js",
+        "freezer.storage.js",
+        "freezer.parser.js",
+        "freezer.net.js",
+        "freezer.ui.js",
+        "freezer.turbo.js",
+        "freezer.scheduler.js",
+        "freezer.boot.js",
+
         "watchdog.js"
       ],
       "run_at": "document_start",

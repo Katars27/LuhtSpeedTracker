@@ -1,12 +1,13 @@
 /* ============================================
-   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe
-   Полностью оптимизировано для LCP:
-   - Все тяжёлые эффекты (gradients, shadows, blur, animations, glows) отключены до LCP
-   - После LCP (класс .lcp-done на <html>) — весь неоновый розовый вайб включается мгновенно
-   - Сохраняет 100% оригинального стиля и атмосферы
+   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe (FIXED)
+   Цели:
+   - ДО LCP: минимум paint/blur/gradients/animations/тяжёлых теней
+   - ПОСЛЕ LCP (.lcp-done на <html>): полный неон-вайб включается
+   - Уважение prefers-reduced-motion
+   - Убраны логические противоречия (раньше ты сам себе выключал transition в конце файла навсегда)
 ============================================ */
 
-/* Уважение prefers-reduced-motion — всегда активно */
+/* ====== Reduced motion — всегда ====== */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -16,22 +17,28 @@
   }
 }
 
-/* Основные цвета (остаются всегда) */
+/* ====== Vars ====== */
 :root {
-  --bg: #1a1218;                  /* Тёмный сливово-фиолетовый */
+  --bg: #1a1218;
   --secondary: #241826;
   --accent-purple: #993366;
   --accent-pink: #ff3399;
   --glow-yellow: #ff66aa;
   --text: #ffd1e6;
   --border: #cc4488;
+
   --shadow: rgba(204, 68, 136, 0.4);
   --shadow-soft: rgba(255, 51, 153, 0.18);
+
+  --panel-bg: rgba(26, 18, 24, 0.95);
+  --panel-radius: 16px;
 }
 
-/* ================== БАЗОВЫЕ СТИЛИ ДО LCP (минимальная нагрузка на paint) ================== */
+/* =========================================================
+   BASE (до LCP): без blur/сложных теней/анимаций/градиентов
+========================================================= */
 
-/* Фон страницы — только solid color */
+/* Фон */
 body:has(#ticktock) {
   background: var(--bg) fixed !important;
   color: var(--text) !important;
@@ -40,7 +47,7 @@ body:has(#ticktock) {
   position: relative;
 }
 
-/* Основная панель — без градиентов, blur, сложных теней */
+/* Панель статистики */
 .luht-panel {
   position: fixed;
   top: 50%;
@@ -49,8 +56,8 @@ body:has(#ticktock) {
   min-width: 280px;
   max-width: 340px;
   padding: 14px 16px;
-  border-radius: 16px;
-  background: rgba(26, 18, 24, 0.95);
+  border-radius: var(--panel-radius);
+  background: var(--panel-bg);
   border: 2px solid var(--border);
   color: var(--text);
   font-family: 'Geist', system-ui, sans-serif;
@@ -64,11 +71,19 @@ body:has(#ticktock) {
   overflow-y: auto;
 }
 
-.luht-panel:hover { opacity: 1; }
+/* ДО LCP — никаких transition на часто перерисовываемом */
+.luht-panel,
+.luht-row,
+.luht-btn,
+.luht-freezer-btn,
+.luht-freezer-panel,
+.luht-last-label {
+  transition: none !important;
+}
 
+.luht-panel:hover { opacity: 1; }
 .luht-panel-paused { opacity: 0.65 !important; }
 
-/* Rows — без фона и теней */
 .luht-row {
   display: flex;
   justify-content: space-between;
@@ -85,7 +100,6 @@ body:has(#ticktock) {
   letter-spacing: 0.02em;
 }
 
-/* Header и заголовок — без градиента */
 .luht-header {
   display: flex;
   align-items: center;
@@ -101,7 +115,6 @@ body:has(#ticktock) {
   color: var(--text);
 }
 
-/* Буст-бейдж — минимальный */
 .luht-boost-badge {
   margin-left: 8px;
   padding: 2px 8px;
@@ -134,7 +147,7 @@ body:has(#ticktock) {
   transform: scale(1.1);
 }
 
-/* Freezer кнопка — минимальная */
+/* Freezer button */
 .luht-freezer-btn {
   position: fixed !important;
   top: calc(env(safe-area-inset-top, 20px) + 20px) !important;
@@ -152,24 +165,22 @@ body:has(#ticktock) {
   z-index: 1000001 !important;
 }
 
-/* Freezer панель — скрыта по умолчанию, минимальный стиль */
+/* Freezer panel */
 .luht-freezer-panel {
   position: fixed !important;
   top: calc(env(safe-area-inset-top, 20px) + 86px) !important;
   right: 20px !important;
   width: 340px !important;
   max-height: 70vh !important;
-  background: rgba(26, 18, 24, 0.95) !important;
+  background: var(--panel-bg) !important;
   border: 2px solid var(--border) !important;
-  border-radius: 16px !important;
+  border-radius: var(--panel-radius) !important;
   padding: 12px !important;
   display: none;
   flex-direction: column;
   z-index: 1000000 !important;
   overflow: hidden;
 }
-
-.luht-freezer-panel[style*="flex"] { display: flex !important; }
 
 .luht-freezer-header {
   text-align: center;
@@ -204,7 +215,7 @@ body:has(#ticktock) {
   border-color: #ff66aa !important;
 }
 
-/* WatchDog кнопка */
+/* WatchDog button */
 .luht-watchdog-toggle {
   position: fixed !important;
   bottom: calc(env(safe-area-inset-bottom, 20px) + 20px) !important;
@@ -222,7 +233,7 @@ body:has(#ticktock) {
   z-index: 1000002 !important;
 }
 
-/* Sidebar и элементы сайта — базовые */
+/* Sidebar */
 body:has(#ticktock) aside {
   height: 100vh !important;
   width: 300px !important;
@@ -238,6 +249,7 @@ body:has(#ticktock) aside {
   scrollbar-color: var(--accent-pink) var(--secondary);
 }
 
+/* Image */
 body:has(#ticktock) img[alt="Image to annotate"] {
   width: min(1000px, calc(100% - 48px)) !important;
   height: auto !important;
@@ -249,45 +261,42 @@ body:has(#ticktock) img[alt="Image to annotate"] {
   border: 1px solid var(--border) !important;
 }
 
-/* === НОВЫЙ КРУТОЙ БЕЙДЖ С ПОСЛЕДНЕЙ МЕТКОЙ === */
+/* LAST LABEL badge — ДО LCP: без blur/градиента/тяжёлых теней */
 body:has(#ticktock) .luht-last-label {
   position: absolute;
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 16px 40px;
+  padding: 12px 24px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff3399, #ff66aa, #ff3399);
-  backdrop-filter: blur(20px);
-  border: 4px solid #ff66aa;
-  box-shadow: 
-    0 0 30px rgba(255, 51, 153, 0.9),
-    0 12px 40px rgba(0, 0, 0, 0.8),
-    0 0 60px rgba(255, 102, 170, 0.6);
-  color: #000;
-  font-size: 26px;
+  background: rgba(255, 51, 153, 0.18);
+  border: 2px solid #ff66aa;
+  color: var(--text);
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
   pointer-events: none;
   z-index: 50;
+
   opacity: 0;
-  transform: translateX(-50%) translateY(20px) scale(0.9);
-  transition: opacity 0.5s ease, transform 0.5s ease;
+  /* show/hide делаем мгновенно ДО LCP — без transition */
 }
 
 body:has(#ticktock) .luht-last-label.show {
   opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1);
 }
 
-/* ================== ПОЛНЫЙ ВАЙБ ПОСЛЕ LCP (класс .lcp-done на <html>) ================== */
+/* =========================================================
+   FULL VIBE (после LCP): разрешаем красивые штуки
+========================================================= */
+
 .lcp-done body:has(#ticktock) {
   background: radial-gradient(circle at 50% 50%, #241826, #1a1218) fixed !important;
 }
 
+/* фоновые светляки — только после LCP */
 .lcp-done body:has(#ticktock)::before {
   content: '';
   position: absolute;
@@ -300,8 +309,18 @@ body:has(#ticktock) .luht-last-label.show {
   animation: floatLight 20s ease-in-out infinite;
 }
 
+/* После LCP можно transitions (но аккуратно: не на часто меняемых тексте) */
+.lcp-done .luht-panel,
+.lcp-done .luht-freezer-btn,
+.lcp-done .luht-freezer-panel,
+.lcp-done .luht-freezer-item,
+.lcp-done .luht-btn,
+.lcp-done body:has(#ticktock) .luht-last-label {
+  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease !important;
+}
+
 .lcp-done .luht-panel {
-  background: linear-gradient(135deg, rgba(255, 51, 153, 0.12), rgba(204, 68, 136, 0.12)), rgba(26, 18, 24, 0.95);
+  background: linear-gradient(135deg, rgba(255, 51, 153, 0.12), rgba(204, 68, 136, 0.12)), var(--panel-bg);
   backdrop-filter: blur(14px);
   box-shadow:
     0 0 0 2px var(--border),
@@ -356,7 +375,7 @@ body:has(#ticktock) .luht-last-label.show {
 }
 
 .lcp-done .luht-freezer-panel {
-  background: linear-gradient(135deg, rgba(255, 51, 153, 0.15), rgba(204, 68, 136, 0.15)), rgba(26, 18, 24, 0.95) !important;
+  background: linear-gradient(135deg, rgba(255, 51, 153, 0.15), rgba(204, 68, 136, 0.15)), var(--panel-bg) !important;
   backdrop-filter: blur(14px);
   box-shadow:
     0 0 0 2px var(--border),
@@ -404,17 +423,31 @@ body:has(#ticktock) .luht-last-label.show {
     0 0 40px var(--shadow-soft) !important;
 }
 
-/* После LCP — ещё ярче и насыщеннее бейдж */
+/* LAST LABEL badge — после LCP: жирный неон */
 .lcp-done body:has(#ticktock) .luht-last-label {
   background: linear-gradient(135deg, #ff3399, #ff99cc, #ff66aa);
-  box-shadow: 
+  backdrop-filter: blur(20px);
+  border: 4px solid #ff66aa;
+  color: #000;
+  font-size: 26px;
+  padding: 16px 40px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  box-shadow:
     0 0 50px rgba(255, 51, 153, 1),
     0 0 90px rgba(255, 102, 170, 0.8),
     0 20px 60px rgba(0, 0, 0, 0.9);
+
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px) scale(0.9);
+}
+
+.lcp-done body:has(#ticktock) .luht-last-label.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
   animation: badgePulseAppear 0.8s ease-out;
 }
 
-/* GPU acceleration для анимированных элементов после LCP */
+/* GPU hints после LCP */
 .lcp-done .luht-panel,
 .lcp-done .luht-freezer-btn,
 .lcp-done .luht-boost-badge,
@@ -423,48 +456,10 @@ body:has(#ticktock) .luht-last-label.show {
   will-change: transform, opacity, box-shadow;
 }
 
-/* ================== АНИМАЦИИ (только после LCP) ================== */
-@keyframes luhtGradientMove {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
+/* =========================================================
+   Site buttons / labels (всегда)
+========================================================= */
 
-@keyframes luhtPulse {
-  from { opacity: 0.7; transform: scale(1); }
-  to   { opacity: 1; transform: scale(1.02); }
-}
-
-@keyframes luhtPulseRed {
-  from { box-shadow: 0 0 20px rgba(255, 77, 77, 0.7); }
-  to   { box-shadow: 0 0 30px rgba(255, 77, 77, 0.9); }
-}
-
-@keyframes subtlePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
-}
-
-@keyframes floatLight {
-  0%   { transform: translate(0, 0); }
-  50%  { transform: translate(20px, -20px); }
-  100% { transform: translate(0, 0); }
-}
-
-@keyframes badgePulseAppear {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.8); box-shadow: 0 0 0 rgba(255, 51, 153, 0); }
-  60%  { transform: translateX(-50%) translateY(-12px) scale(1.08); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); box-shadow: 0 0 60px rgba(255, 51, 153, 0.9); }
-}
-
-@keyframes freezerFadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ================== ОСТАЛЬНЫЕ СТИЛИ (всегда активны, не влияют на LCP) ================== */
-
-/* Выбранные метки и активные элементы */
 body:has(#ticktock) aside button[name="label"][aria-selected="true"] {
   background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)) !important;
   color: #000 !important;
@@ -473,7 +468,6 @@ body:has(#ticktock) aside button[name="label"][aria-selected="true"] {
   box-shadow: 0 0 20px rgba(255, 51, 153, 0.5);
 }
 
-/* Кнопки меток и очереди */
 body:has(#ticktock) aside button[name="label"],
 body:has(#ticktock) aside a[href*="/queue/"] {
   display: block !important;
@@ -502,7 +496,7 @@ body:has(#ticktock) aside h2:nth-of-type(4) + div {
   display: none !important;
 }
 
-/* Скроллбар */
+/* Scrollbar */
 body:has(#ticktock) aside::-webkit-scrollbar { width: 8px; }
 body:has(#ticktock) aside::-webkit-scrollbar-track { background: var(--secondary); }
 body:has(#ticktock) aside::-webkit-scrollbar-thumb {
@@ -510,7 +504,7 @@ body:has(#ticktock) aside::-webkit-scrollbar-thumb {
   border-radius: 10px;
 }
 
-/* Список задач на /v2/tasks/ */
+/* Tasks list page */
 body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
   display: block !important;
   padding: 14px 16px !important;
@@ -529,7 +523,7 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
 }
 
-/* Адаптивность */
+/* Responsive */
 @media (max-width: 1200px) {
   .luht-panel {
     left: 10px;
@@ -549,7 +543,7 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
   }
 }
 
-/* Страница завершения задачи — полный вайб всегда */
+/* Finish page — всегда вайб */
 body > div.flex {
   background: linear-gradient(135deg, rgba(153,51,102,0.2), rgba(255,51,153,0.2)), rgba(26,18,24,0.85);
   padding: 40px 24px;
@@ -596,10 +590,43 @@ body > div.flex p { margin-top: 12px; font-size: 1.125rem; color: #ffd1e6cc; }
 body > div.flex a { color: #ff66aa; font-weight: 600; text-decoration: none; transition: 0.2s ease; }
 body > div.flex a:hover { color: #ff3399; text-shadow: 0 0 6px #ff3399; }
 
-/* Speed-friendly cleanup — без transition на часто обновляемых элементах */
-.luht-row,
-.luht-btn,
-.luht-panel,
-body:has(#ticktock) .luht-last-label {
-  transition: none !important;
+/* =========================================================
+   Animations (только после LCP реально “видно”)
+========================================================= */
+@keyframes luhtGradientMove {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes luhtPulse {
+  from { opacity: 0.7; transform: scale(1); }
+  to   { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes luhtPulseRed {
+  from { box-shadow: 0 0 20px rgba(255, 77, 77, 0.7); }
+  to   { box-shadow: 0 0 30px rgba(255, 77, 77, 0.9); }
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes floatLight {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(20px, -20px); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes badgePulseAppear {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.8); box-shadow: 0 0 0 rgba(255, 51, 153, 0); }
+  60%  { transform: translateX(-50%) translateY(-12px) scale(1.08); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); box-shadow: 0 0 60px rgba(255, 51, 153, 0.9); }
+}
+
+@keyframes freezerFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
