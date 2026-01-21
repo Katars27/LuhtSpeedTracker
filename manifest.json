@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Luht Speed Tracker v2",
-  "version": "4.4.0",
+  "version": "5.0.0",
   "description": "Статистика скорости разметки, красивый розовый UI и турбо-ускорение сайта",
   "icons": {
     "128": "icon128.png"
