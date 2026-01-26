@@ -1,13 +1,36 @@
 // freezer.net.js
-(function (ns) {
-  'use strict';
+'use strict';
 
+(function (ns) {
   const S = ns.state;
 
   // Один общий in-flight запрос, чтобы не плодить параллельные fetch'и
   let inflightTaskListPromise = null;
 
-  // Fetch с таймаутом
+  // ============================
+  //   SMALL UTILS (LOCAL)
+  // ============================
+  function sleep(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+  }
+
+  function safeListFallback() {
+    // 1) память
+    if (Array.isArray(S.taskList) && S.taskList.length) return S.taskList;
+
+    // 2) кэш
+    try {
+      const cached = ns.loadCache();
+      if (Array.isArray(cached) && cached.length) return cached;
+    } catch {}
+
+    // 3) пусто
+    return [];
+  }
+
+  // ============================
+  //   FETCH HELPERS
+  // ============================
   ns.fetchWithTimeout = async function (url, opts = {}, timeoutMs) {
     const t = Math.max(1, Number(timeoutMs || 0) || 0);
 
@@ -22,15 +45,17 @@
       }
     }
 
-    // Без AbortController — race
+    // Без AbortController — race (fetch сеть не отменит, но код перестанет ждать)
     return await Promise.race([
       fetch(url, opts),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), t))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), t)),
     ]);
   };
 
-  // GET text с ретраями
-  ns.fetchTextWithRetry = async function (url, { tries = 3, timeoutMs = 30000 } = {}) {
+  ns.fetchTextWithRetry = async function (
+    url,
+    { tries = 3, timeoutMs = 30000, backoffBaseMs = 180, backoffJitterMs = 90 } = {}
+  ) {
     const maxTries = Math.max(1, Number(tries) || 1);
     const t = Math.max(1000, Number(timeoutMs) || 30000);
 
@@ -53,24 +78,18 @@
         lastErr = e;
         // небольшая пауза с ростом
         try {
-          await ns.delay(150 * attempt + Math.floor(Math.random() * 80));
-        } catch (_) {}
+          const wait = backoffBaseMs * attempt + Math.floor(Math.random() * backoffJitterMs);
+          await sleep(wait);
+        } catch {}
       }
     }
 
     throw lastErr || new Error('fetchTextWithRetry failed');
   };
 
-  function safeListFallback() {
-    // 1) память
-    if (Array.isArray(S.taskList) && S.taskList.length) return S.taskList;
-    // 2) кэш
-    const cached = ns.loadCache();
-    if (Array.isArray(cached) && cached.length) return cached;
-    // 3) пусто
-    return [];
-  }
-
+  // ============================
+  //   TASK LIST FETCH
+  // ============================
   async function doFetchTaskList(force) {
     const now = Date.now();
 
@@ -87,7 +106,7 @@
     // Пытаемся скачать и распарсить
     const html = await ns.fetchTextWithRetry('/v2/tasks/list/', {
       tries: 3,
-      timeoutMs: 30000
+      timeoutMs: 30000,
     });
 
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -96,10 +115,22 @@
     // На всякий — убираем выполненные
     arr = ns.pruneFinishedFromList(arr || []);
 
+    // ВАЖНО: чтобы "обновление списка во время работы" работало стабильно,
+    // мы обновляем S.taskList даже если массив пустой, но только если force=true.
+    // Иначе можно случайно перетереть валидный список временным пустым ответом.
     if (Array.isArray(arr) && arr.length) {
       S.taskList = arr;
       S.lastTaskListFetchTS = now;
-      ns.saveCache(arr);
+      try {
+        ns.saveCache(arr);
+      } catch {}
+      return arr;
+    }
+
+    if (force && Array.isArray(arr)) {
+      S.taskList = arr;
+      S.lastTaskListFetchTS = now;
+      // пустое в кэш не пишем
       return arr;
     }
 
@@ -112,11 +143,11 @@
     const wantForce = !!force;
 
     // Если уже идёт запрос:
-    // - если текущий запрос НЕ force, а нам нужно force — подменяем на новый force-запрос
+    // - если текущий запрос НЕ force, а нам нужно force — стартуем новый force-запрос
     // - иначе ждём текущий
     if (inflightTaskListPromise) {
       if (!inflightTaskListPromise.__force && wantForce) {
-        // отменить нельзя, но мы просто стартуем новый "важный" запрос
+        // отменить нельзя, но мы "переключаемся" на новый более важный запрос
         inflightTaskListPromise = null;
       } else {
         return inflightTaskListPromise;

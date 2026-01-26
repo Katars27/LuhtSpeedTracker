@@ -7,7 +7,7 @@
   window.__luht_ui_v2_loaded = true;
 
   if (!window.LuhtSpeedCore) {
-    console.warn('[LUHT] LuhtSpeedCore not found');
+    try { console.warn('[LUHT] LuhtSpeedCore not found'); } catch {}
     return;
   }
   const Core = window.LuhtSpeedCore;
@@ -42,31 +42,69 @@
 
   // trailing throttle (чтобы не пропускать последний апдейт)
   function throttleTrailing(fn, delay) {
-    let lastCall = 0;
-    let timeout = null;
+    let lastExec = 0;
+    let timer = null;
     let lastArgs = null;
+    let lastThis = null;
 
-    return function (...args) {
+    function invoke(now) {
+      lastExec = now;
+      const args = lastArgs;
+      const ctx = lastThis;
+      lastArgs = null;
+      lastThis = null;
+      try {
+        return fn.apply(ctx, args || []);
+      } catch (e) {
+        try { console.error('[LUHT] throttled fn error', e); } catch {}
+      }
+    }
+
+    function scheduled() {
+      timer = null;
+      invoke(Date.now());
+    }
+
+    const wrapped = function (...args) {
       const now = Date.now();
       lastArgs = args;
+      lastThis = this;
 
-      const remaining = delay - (now - lastCall);
+      const elapsed = now - lastExec;
+      const remaining = delay - elapsed;
+
       if (remaining <= 0) {
-        lastCall = now;
-        if (timeout) {
-          clearTimeout(timeout);
-          timeout = null;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
         }
-        return fn.apply(this, args);
+        return invoke(now);
       }
 
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        lastCall = Date.now();
-        timeout = null;
-        if (lastArgs) fn.apply(this, lastArgs);
-      }, remaining);
+      if (!timer) {
+        timer = setTimeout(scheduled, remaining);
+      }
     };
+
+    wrapped.cancel = function () {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      lastArgs = null;
+      lastThis = null;
+    };
+
+    wrapped.flush = function () {
+      if (!lastArgs) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      return invoke(Date.now());
+    };
+
+    return wrapped;
   }
 
   function inEditable() {
@@ -80,13 +118,28 @@
     return /\/v2\/task\/.+\/queue\//.test(location.pathname);
   }
 
+  function safeAppendToRoot(el) {
+    const root = document.documentElement || document;
+    try {
+      root.appendChild(el);
+    } catch {
+      document.addEventListener(
+        'DOMContentLoaded',
+        () => {
+          try { (document.documentElement || document).appendChild(el); } catch {}
+        },
+        { once: true }
+      );
+    }
+  }
+
   // =====================================================
   // PANEL UI — создаём один раз, скрыта до LCP
   // =====================================================
   const panel = document.createElement('div');
   panel.className = 'luht-panel';
   panel.style.visibility = 'hidden';
-  document.documentElement.appendChild(panel);
+  safeAppendToRoot(panel);
 
   const header = document.createElement('div');
   header.className = 'luht-header';
@@ -151,7 +204,7 @@
     if (lcpActivated) return;
     lcpActivated = true;
 
-    document.documentElement.classList.add('lcp-done');
+    try { document.documentElement.classList.add('lcp-done'); } catch {}
     panel.style.visibility = 'visible';
 
     // Турбо — только после LCP
@@ -161,28 +214,34 @@
     startLoops();
   }
 
-  const lcpObserver = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      if (entry.entryType === 'largest-contentful-paint') {
-        activateFullVibe();
-        try { lcpObserver.disconnect(); } catch {}
-      }
-    }
-  });
   try {
+    const lcpObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry && entry.entryType === 'largest-contentful-paint') {
+          activateFullVibe();
+          try { lcpObserver.disconnect(); } catch {}
+          break;
+        }
+      }
+    });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
   } catch {}
 
-  function lcpFallbackLoop() {
-    if (lcpActivated) return;
-    const img = document.querySelector('img[alt="Image to annotate"]');
-    if (img && img.complete && img.naturalHeight > 0) {
-      activateFullVibe();
-    } else {
-      requestAnimationFrame(lcpFallbackLoop);
-    }
-  }
-  requestAnimationFrame(lcpFallbackLoop);
+  // Фоллбек без вечного rAF
+  (function lcpFallback() {
+    const started = Date.now();
+    const loop = () => {
+      if (lcpActivated) return;
+      const img = document.querySelector('img[alt="Image to annotate"]');
+      if (img && img.complete && img.naturalHeight > 0) {
+        activateFullVibe();
+        return;
+      }
+      if (Date.now() - started > 3500) return;
+      requestAnimationFrame(loop);
+    };
+    try { requestAnimationFrame(loop); } catch {}
+  })();
 
   setTimeout(() => {
     if (!lcpActivated) activateFullVibe();
@@ -197,17 +256,23 @@
   let lastBadgeVisible = false;
 
   function ensureLabelBadge() {
-    if (!labelSection || !document.body || !document.body.contains(labelSection)) {
-      labelSection = document.querySelector('#ticktock section.h-full');
-    }
-    if (!labelSection) return null;
+    try {
+      if (!document.body) return null;
 
-    if (!labelBadge || !labelSection.contains(labelBadge)) {
-      labelBadge = document.createElement('div');
-      labelBadge.className = 'luht-last-label';
-      labelSection.appendChild(labelBadge);
+      if (!labelSection || !document.body.contains(labelSection)) {
+        labelSection = document.querySelector('#ticktock section.h-full');
+      }
+      if (!labelSection) return null;
+
+      if (!labelBadge || !labelSection.contains(labelBadge)) {
+        labelBadge = document.createElement('div');
+        labelBadge.className = 'luht-last-label';
+        labelSection.appendChild(labelBadge);
+      }
+      return labelBadge;
+    } catch {
+      return null;
     }
-    return labelBadge;
   }
 
   function updateLastLabelBadge() {
@@ -263,7 +328,7 @@
   // Image Turbo (совместимо с freezer.turbo.js)
   // =====================================================
   const TURBO_ENABLED_KEY = 'imageTurboEnabled';
-  const TURBO_DEAD_TS_KEY = 'imageTurboProxyDeadTs'; // ВАЖНО: как в freezer.constants.js
+  const TURBO_DEAD_TS_KEY = 'imageTurboProxyDeadTs'; // как в freezer.constants.js
   const TURBO_COOLDOWN_MS = 30 * 60 * 1000;
 
   let turboRow = null;
@@ -324,10 +389,12 @@
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const on = turboToggle.checked;
-        localStorage.setItem(TURBO_ENABLED_KEY, on ? 'true' : 'false');
+        try { localStorage.setItem(TURBO_ENABLED_KEY, on ? 'true' : 'false'); } catch {}
         if (on) clearTurboCooldown();
-        turboIcon.textContent = on ? '💨 Активно' : 'Выключено';
-        turboIcon.style.opacity = on ? '1' : '0.5';
+        if (turboIcon) {
+          turboIcon.textContent = on ? '💨 Активно' : 'Выключено';
+          turboIcon.style.opacity = on ? '1' : '0.5';
+        }
         applyImageTurbo();
       }, 100);
     });
@@ -373,7 +440,6 @@
       img.dataset.webpOptimized = 'fail';
       setTurboCooldown();
 
-      // UI статуса
       if (turboIcon) {
         turboIcon.textContent = 'Недоступно (временно)';
         turboIcon.style.opacity = '0.5';
@@ -400,7 +466,7 @@
   }
 
   function hardReset({ withTasks = false } = {}) {
-    Core.resetAll();
+    try { Core.resetAll(); } catch {}
 
     if (withTasks) {
       try {
@@ -409,8 +475,7 @@
         localStorage.removeItem('luht_freezer_last_clean_ts_v1');
       } catch {}
 
-      // если freezer выставляет методы — отлично; если нет — молчим
-      try { window.LUHT?.freezer?.safeRefresh?.(true); } catch {}
+      try { window.LUHT && window.LUHT.freezer && window.LUHT.freezer.safeRefresh && window.LUHT.freezer.safeRefresh(true); } catch {}
     }
 
     // Turbo: выключаем и снимаем cooldown
@@ -428,11 +493,11 @@
     // сбросим флаг оптимизации картинки на текущей
     const img = getCurrentImage();
     if (img) {
-      delete img.dataset.webpOptimized;
+      try { delete img.dataset.webpOptimized; } catch { img.dataset.webpOptimized = ''; }
     }
 
     lastStateSnapshot = null;
-    Core.setAlreadyCounted(false);
+    try { Core.setAlreadyCounted(false); } catch {}
     updatePanel(true);
     updateLastLabelBadge();
   }
@@ -481,11 +546,18 @@
 
     // быстрый снапшот без JSON.stringify (меньше аллокаций)
     const snap = [
-      st.totalCount, st.c1, st.c5, st.c15, st.c60,
-      st.streakMs, st.bestStreakMs,
+      st.totalCount,
+      st.c1,
+      st.c5,
+      st.c15,
+      st.c60,
+      st.streakMs,
+      st.bestStreakMs,
       st.warning ? 1 : 0,
       st.boost ? 1 : 0,
-      st.paused ? 1 : 0
+      st.paused ? 1 : 0,
+      st.activeTimeMs,
+      st.totalTimeMs,
     ].join('|');
 
     if (!force && snap === lastStateSnapshot) return;
@@ -499,6 +571,9 @@
 
     setTextIfChanged(rStreak.value, st.streakMs > 0 ? Core.formatDuration(st.streakMs) : '—');
     setTextIfChanged(rBest.value, st.bestStreakMs > 0 ? Core.formatDuration(st.bestStreakMs) : '—');
+
+    setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
+    setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
 
     r1m.row.classList.toggle('luht-row-minute-good', st.c1 >= 100);
     r1m.row.classList.toggle('luht-row-minute-bad', st.c1 >= 90 && st.c1 < 100);
@@ -514,22 +589,28 @@
     );
   }
 
-  const throttledUpdatePanel = throttleTrailing(updatePanel, 200);
+  const throttledUpdatePanel = throttleTrailing(() => updatePanel(false), 200);
   const throttledUpdateBadge = throttleTrailing(updateLastLabelBadge, 200);
 
   // =====================================================
-  // ВРЕМЯ — один setInterval (без rAF-петли)
+  // ВРЕМЯ — один setInterval
   // =====================================================
   let timeInterval = null;
+
   function startTimeLoop() {
     if (timeInterval) return;
+
     const tick = () => {
       const st = Core.getState();
       setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
       setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
     };
+
     tick();
-    timeInterval = setInterval(tick, 1000);
+    timeInterval = setInterval(() => {
+      if (document.hidden) return;
+      tick();
+    }, 1000);
   }
 
   function stopTimeLoop() {
@@ -541,12 +622,15 @@
   // =====================================================
   // INPUT HANDLERS
   // =====================================================
+  // ВАЖНО: prev НЕ должен делать registerClickActivity(), иначе пауза/активность ломается.
+  let prevClickBlocked = false;
+
   document.addEventListener(
     'click',
     (ev) => {
       if (!isQueuePage()) return;
 
-      const btn = ev.target.closest('button[name="label"]');
+      const btn = ev.target && ev.target.closest ? ev.target.closest('button[name="label"]') : null;
       if (btn) {
         showInstantLabel(btn);
 
@@ -561,11 +645,17 @@
         return;
       }
 
-      const prev = ev.target.closest('a[href$="/prev/"]');
+      const prev = ev.target && ev.target.closest ? ev.target.closest('a[href$="/prev/"]') : null;
       if (prev) {
-        Core.setAlreadyCounted(false);
-        Core.backEvent();
-        Core.registerClickActivity();
+        if (prevClickBlocked) return;
+        prevClickBlocked = true;
+        setTimeout(() => { prevClickBlocked = false; }, 180);
+
+        try {
+          Core.setAlreadyCounted(false);
+          Core.backEvent();
+        } catch {}
+
         throttledUpdatePanel();
       }
     },
@@ -599,7 +689,7 @@
   function onAfterSwap(ev) {
     // если свап внутри нашей панели/бейджа — игнор
     try {
-      const target = ev?.detail?.target;
+      const target = ev && ev.detail && ev.detail.target;
       if (target && target.closest) {
         if (target.closest('.luht-panel') || target.closest('.luht-last-label')) return;
       }
@@ -607,10 +697,10 @@
 
     clearTimeout(htmxDebounce);
     htmxDebounce = setTimeout(() => {
-      Core.setAlreadyCounted(false);
+      try { Core.setAlreadyCounted(false); } catch {}
       currentImg = null;
       applyImageTurbo();
-      throttledUpdatePanel(true);
+      updatePanel(true);
       throttledUpdateBadge();
     }, 80);
   }
@@ -626,12 +716,21 @@
   setupHtmxListener();
 
   // =====================================================
-  // MAIN LOOP — лёгкий и редкий, без бесконечного ric
+  // MAIN LOOP — лёгкий
   // =====================================================
   let uiLoopTimer = null;
+  let visBound = false;
 
   function startLoops() {
     startTimeLoop();
+
+    if (!visBound) {
+      visBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopTimeLoop();
+        else startTimeLoop();
+      });
+    }
 
     if (uiLoopTimer) return;
     const loop = () => {
@@ -640,12 +739,6 @@
       uiLoopTimer = setTimeout(loop, 800);
     };
     loop();
-
-    // экономия: когда вкладка скрыта — замораживаем время-тик
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) stopTimeLoop();
-      else startTimeLoop();
-    });
   }
 
   // Инициализация (форсим первый рендер)

@@ -1,7 +1,7 @@
 // freezer.ui.js
-(function (ns) {
-  'use strict';
+'use strict';
 
+(function (ns) {
   const S = ns.state;
 
   // Нормализуем ссылку для ключей/сравнений (всегда absolute href)
@@ -10,10 +10,28 @@
     return u || null;
   }
 
+  function safeAppendToRoot(el) {
+    const root = document.documentElement || document;
+    try {
+      root.appendChild(el);
+    } catch {
+      const onReady = () => {
+        try {
+          (document.documentElement || document).appendChild(el);
+        } catch {}
+      };
+      document.addEventListener('DOMContentLoaded', onReady, { once: true });
+    }
+  }
+
   // ============================
   //   UI CREATE
   // ============================
   ns.createFreezerUI = function () {
+    // не плодим UI
+    if (S.pickerButton && (document.documentElement || document).contains(S.pickerButton)) return;
+    if (S.picker && (document.documentElement || document).contains(S.picker)) return;
+
     // Кнопка открытия панели задач
     const btn = document.createElement('button');
     btn.className = 'luht-freezer-btn';
@@ -46,7 +64,7 @@
       ns.togglePicker();
     });
 
-    document.documentElement.appendChild(btn);
+    safeAppendToRoot(btn);
     S.pickerButton = btn;
 
     // Панель списка задач
@@ -99,7 +117,7 @@
     panel.appendChild(list);
 
     panel.setAttribute('hx-preserve', '');
-    document.documentElement.appendChild(panel);
+    safeAppendToRoot(panel);
 
     S.picker = panel;
     S.pickerList = list;
@@ -108,6 +126,12 @@
   // ============================
   //   LIST RENDER (SMART)
   // ============================
+  // ВАЖНО: поддержка дубликатов.
+  // Ключ элемента = hrefAbs + '::' + occurrenceIndex (порядок появления в taskList)
+  function makeKey(hrefAbs, occ) {
+    return `${hrefAbs}::${occ}`;
+  }
+
   ns.updateTaskListSmart = function (taskList) {
     if (!S.pickerList || !S.isOpen) return;
     if (!Array.isArray(taskList)) return;
@@ -115,34 +139,51 @@
     const currentId = ns.getTaskIdFromPath(location.pathname);
     const fragment = document.createDocumentFragment();
 
-    // карта существующих элементов по нормализованному href
+    // существующие элементы по ключу (hrefAbs::occ)
     const existing = new Map();
     S.pickerList.querySelectorAll('.luht-freezer-item').forEach((el) => {
-      const key = normAbsHref(el.getAttribute('href') || el.href);
+      const key = el.getAttribute('data-key');
       if (key) existing.set(key, el);
     });
 
     const finishedSet = new Set(ns.loadFinishedIds());
     const visibleEnd = Math.min(70, taskList.length);
 
+    // счётчик встречаемости hrefAbs в текущем батче
+    const occCounter = new Map();
+
     for (let i = 0; i < visibleEnd; i++) {
       const t = taskList[i];
-      const hrefAbs = normAbsHref(t?.href);
+      const hrefAbs = normAbsHref(t && t.href);
       if (!hrefAbs) continue;
 
       const id = ns.getTaskIdFromPath(hrefAbs);
       if (id && finishedSet.has(id)) continue;
 
-      let item = existing.get(hrefAbs);
+      const occ = (occCounter.get(hrefAbs) || 0) + 1;
+      occCounter.set(hrefAbs, occ);
+
+      const key = makeKey(hrefAbs, occ);
+
+      let item = existing.get(key);
       if (item) {
-        ns.setTextIfChanged(item, t.title);
-        item.classList.toggle('active', !!id && id === currentId);
+        // обновляем текст
+        ns.setTextIfChanged(item, (t && t.title) || hrefAbs);
+
+        // актуализируем href (на всякий)
+        if (item.href !== hrefAbs) item.href = hrefAbs;
+
+        // подсветка
+        const isActive = !!id && id === currentId;
+        item.classList.toggle('active', isActive);
+
         fragment.appendChild(item);
       } else {
         item = document.createElement('a');
         item.className = 'luht-freezer-item';
         item.href = hrefAbs;
-        item.textContent = t?.title || hrefAbs;
+        item.textContent = (t && t.title) || hrefAbs;
+        item.setAttribute('data-key', key);
 
         item.style.cssText = `
           display: block !important;
@@ -170,7 +211,8 @@
           item.style.borderColor = 'rgba(255,255,255,0.06)';
         });
 
-        if (id && id === currentId) item.classList.add('active');
+        const isActive = !!id && id === currentId;
+        if (isActive) item.classList.add('active');
 
         item.addEventListener('click', () => ns.closePicker());
         fragment.appendChild(item);
@@ -216,12 +258,13 @@
   ns.openPicker = function () {
     if (document.hidden) return;
     if (!S.picker || !S.pickerList) return;
-    if (S.isOpen) return; // уже открыто — ничего не делаем
+    if (S.isOpen) return;
 
     S.isOpen = true;
 
     S.picker.style.display = 'block';
     requestAnimationFrame(() => {
+      if (!S.picker) return;
       S.picker.style.opacity = '1';
       S.picker.style.transform = 'translateY(0)';
       S.picker.style.visibility = 'visible';
@@ -229,7 +272,8 @@
 
     // Заглушка "Загрузка..."
     const msg = document.createElement('div');
-    msg.style.cssText = 'text-align:center;padding:18px;color:rgba(255,255,255,0.65);font-size:13px;';
+    msg.style.cssText =
+      'text-align:center;padding:18px;color:rgba(255,255,255,0.65);font-size:13px;';
     msg.textContent = 'Загрузка списка...';
     S.pickerList.replaceChildren(msg);
 
@@ -238,32 +282,33 @@
     ns.updateActiveHighlight();
 
     // Догрузка минимума задач (idle + timeout)
-ns.myRequestIdleCallback(() => {
-  (async () => {
-    try {
-      if (!S.isOpen) return;
+    ns.myRequestIdleCallback(
+      () => {
+        (async () => {
+          try {
+            if (!S.isOpen) return;
 
-      const current = ns.pruneFinishedFromList(S.taskList || []);
-      S.taskList = current;
+            const current = ns.pruneFinishedFromList(S.taskList || []);
+            S.taskList = current;
 
-      if ((S.taskList?.length || 0) < 5) {
-        const list = await ns.ensureTaskListMin(5);
-        if (!S.isOpen) return;
-        S.taskList = list || [];
-      }
+            if ((S.taskList && S.taskList.length) < 5 && typeof ns.ensureTaskListMin === 'function') {
+              const list = await ns.ensureTaskListMin(5);
+              if (!S.isOpen) return;
+              S.taskList = Array.isArray(list) ? list : [];
+            }
 
-      ns.updateTaskListSmart(S.taskList || []);
-      ns.updateActiveHighlight();
-    } catch (e) {
-      if (S.isOpen) {
-        ns.updateTaskListSmart(S.taskList || []);
-        ns.updateActiveHighlight();
-      }
-    }
-  })();
-}, { timeout: 150 });
-
-
+            ns.updateTaskListSmart(S.taskList || []);
+            ns.updateActiveHighlight();
+          } catch {
+            if (S.isOpen) {
+              ns.updateTaskListSmart(S.taskList || []);
+              ns.updateActiveHighlight();
+            }
+          }
+        })();
+      },
+      { timeout: 150 }
+    );
   };
 
   ns.closePicker = function () {
@@ -275,12 +320,13 @@ ns.myRequestIdleCallback(() => {
     setTimeout(() => {
       if (!S.picker) return;
       S.picker.style.display = 'none';
+      S.picker.style.visibility = 'hidden';
       S.isOpen = false;
     }, 250);
   };
 
   ns.togglePicker = function () {
-    ns.markWorking();
+    if (typeof ns.markWorking === 'function') ns.markWorking();
     if (S.isOpen) ns.closePicker();
     else ns.openPicker();
   };

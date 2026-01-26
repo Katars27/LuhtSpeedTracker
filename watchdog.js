@@ -7,24 +7,14 @@
   if (window.LuhtWatchDog) return;
   window.LuhtWatchDog = true;
 
-  // =====================================================
-  // WATCHDOG PRO — панель мониторинга
-  // Кнопка снизу справа, панель над ней, лог + экспорт
-  // Оптимизации:
-  // - DOM-лог батчится (rAF) и ограничивается
-  // - MutationObserver подключается только когда активен
-  // - Не логируем изменения, которые инициируем сами
-  // - Жёсткие лимиты на "шумные" батчи
-  // =====================================================
-
   const ROOT_ID = '__luht_watchdog_root__';
 
   const DOM_LOG_THROTTLE_MS = 700;
   const MAX_LOGS = 300;
   const MAX_DOM_BATCH = 9999;
 
-  const MAX_PENDING_ENTRIES = 80;      // чтобы не раздувало очередь
-  const MAX_FLUSH_PER_FRAME = 60;      // чтобы не забивать один кадр
+  const MAX_PENDING_ENTRIES = 80; // чтобы не раздувало очередь
+  const MAX_FLUSH_PER_FRAME = 60; // чтобы не забивать один кадр
   const CLOSE_ANIM_MS = 250;
 
   let toggleBtn = null;
@@ -70,6 +60,19 @@
       .replaceAll("'", '&#039;');
   }
 
+  function safeAppendToRoot(el) {
+    const root = document.documentElement || document;
+    try {
+      root.appendChild(el);
+    } catch (e) {
+      ensureBody(() => {
+        try {
+          (document.body || root).appendChild(el);
+        } catch (_) {}
+      });
+    }
+  }
+
   function createToggleButton() {
     if (toggleBtn) return;
 
@@ -106,7 +109,7 @@
       toggleWatchDog();
     });
 
-    (document.documentElement || document).appendChild(toggleBtn);
+    safeAppendToRoot(toggleBtn);
   }
 
   function createPanel() {
@@ -120,7 +123,7 @@
       position: 'fixed',
       bottom: 'calc(env(safe-area-inset-bottom, 20px) + 86px)',
       right: '20px',
-      width: '460px',
+      width: 'min(460px, calc(100vw - 40px))',
       maxHeight: '70vh',
       background: 'rgba(26, 18, 24, 0.95)',
       border: '2px solid #cc4488',
@@ -228,7 +231,7 @@
     panel.appendChild(controls);
     panel.appendChild(logBody);
 
-    (document.documentElement || document).appendChild(panel);
+    safeAppendToRoot(panel);
   }
 
   function scheduleFlush() {
@@ -318,9 +321,12 @@
     a.style.display = 'none';
 
     ensureBody(() => {
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const root = document.body || document.documentElement || document;
+      try {
+        root.appendChild(a);
+        a.click();
+        a.remove();
+      } catch (e) {}
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   }
@@ -423,6 +429,7 @@
     if (toggleBtn) {
       toggleBtn.style.transform = 'scale(1.08)';
       toggleBtn.style.boxShadow = '0 0 30px rgba(255,106,193,0.8)';
+      toggleBtn.setAttribute('aria-pressed', 'true');
     }
 
     openPanel();
@@ -442,6 +449,7 @@
     if (toggleBtn) {
       toggleBtn.style.transform = 'scale(1)';
       toggleBtn.style.boxShadow = '0 4px 20px rgba(136, 136, 255, 0.5)';
+      toggleBtn.setAttribute('aria-pressed', 'false');
     }
 
     // DOM-лог чистим, но текстовый logs оставляем (можно экспортнуть после закрытия)
@@ -471,13 +479,22 @@
     { capture: true }
   );
 
-  // Хоткей Ctrl+Shift+D
-  window.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
-      e.preventDefault();
-      toggleWatchDog();
-    }
-  });
+  // Хоткей Ctrl+Shift+D (и защита от ввода в поля)
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.repeat) return;
+
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+
+      if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+        e.preventDefault();
+        toggleWatchDog();
+      }
+    },
+    { capture: true }
+  );
 
   // Автоактивация по ?watchdog=1
   if (location.search.includes('watchdog=1')) {
@@ -495,7 +512,9 @@
 
   // Авто-выключение при уходе со страницы
   window.addEventListener('beforeunload', () => {
-    try { deactivate(); } catch {}
+    try {
+      deactivate();
+    } catch {}
   });
 
   // Глобальные хелперы

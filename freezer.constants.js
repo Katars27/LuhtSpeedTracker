@@ -1,23 +1,39 @@
 // freezer.constants.js
+'use strict';
+
 window.LUHT = window.LUHT || {};
 window.LUHT.freezer = window.LUHT.freezer || {};
 
-(function(ns) {
+(function (ns) {
+  // ============================
+  //   STORAGE KEYS
+  // ============================
   ns.CACHE_KEY = 'luht_freezer_tasklist_v1';
   ns.RETURN_URL_KEY = 'luht_freezer_return_url';
   ns.FINISHED_KEY = 'luht_finished_task_ids_v1';
+
+  // ============================
+  //   LIMITS / TIMINGS
+  // ============================
   ns.MAX_CACHE_SIZE = 1000;
 
-  ns.TASKLIST_REFRESH_TTL_MS = 5 * 60 * 1000;    // 5 минут
-  ns.WORK_TIMEOUT_MS = 5000;                     // 5 секунд
-  ns.REFRESH_FALLBACK_TIMEOUT = 30000;           // 30 секунд
+  ns.TASKLIST_REFRESH_TTL_MS = 5 * 60 * 1000; // 5 минут
+  ns.WORK_TIMEOUT_MS = 5000; // 5 секунд
+  ns.REFRESH_FALLBACK_TIMEOUT = 30000; // 30 секунд
 
-  ns.TURBO_COOLDOWN_MS = 30 * 60 * 1000;         // 30 минут
+  // Turbo
+  ns.TURBO_COOLDOWN_MS = 30 * 60 * 1000; // 30 минут
   ns.TURBO_DEAD_TS_KEY = 'imageTurboProxyDeadTs';
 
-  ns.HAS_ABORT = (typeof window.AbortController === 'function');
+  // Abort support
+  ns.HAS_ABORT = typeof window.AbortController === 'function';
 
-  ns.state = {
+  // ============================
+  //   STATE
+  // ============================
+  // ВАЖНО: не храним bgInterval в state — scheduler управляет своим интервалом сам.
+  // Это убирает дублирование и "почему тут null, а там id" баги.
+  ns.state = ns.state || {
     taskList: [],
     picker: null,
     pickerList: null,
@@ -50,7 +66,5 @@ window.LUHT.freezer = window.LUHT.freezer || {};
 
     rTimer: null,
     longRTriggered: false,
-
-    bgInterval: null
   };
 })(window.LUHT.freezer);

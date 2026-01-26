@@ -1,38 +1,38 @@
 // freezer.utils.js
+'use strict';
+
 (function (ns) {
-  'use strict';
-
-  const S = ns.state;
-
   // requestIdleCallback с фоллбеком (и безопасным bind)
-(function initIdle() {
-  const ric = window.requestIdleCallback;
-  const cic = window.cancelIdleCallback;
+  (function initIdle() {
+    const ric = window.requestIdleCallback;
+    const cic = window.cancelIdleCallback;
 
-  if (typeof ric === 'function') {
-    // bind на window — убивает Illegal invocation
-    ns.myRequestIdleCallback = ric.bind(window);
-  } else {
-    ns.myRequestIdleCallback = function (cb, opts) {
-      const timeout = (opts && typeof opts.timeout === 'number') ? opts.timeout : 50;
-      return setTimeout(() => {
-        const start = Date.now();
-        cb({
-          didTimeout: true,
-          timeRemaining() {
-            return Math.max(0, 50 - (Date.now() - start));
-          }
-        });
-      }, timeout);
-    };
-  }
+    if (typeof ric === 'function') {
+      // bind на window — убивает Illegal invocation
+      ns.myRequestIdleCallback = ric.bind(window);
+    } else {
+      ns.myRequestIdleCallback = function (cb, opts) {
+        const timeout = opts && typeof opts.timeout === 'number' ? opts.timeout : 50;
+        return setTimeout(() => {
+          const start = Date.now();
+          cb({
+            didTimeout: true,
+            timeRemaining() {
+              return Math.max(0, 50 - (Date.now() - start));
+            },
+          });
+        }, timeout);
+      };
+    }
 
-  if (typeof cic === 'function') {
-    ns.myCancelIdleCallback = cic.bind(window);
-  } else {
-    ns.myCancelIdleCallback = function (id) { clearTimeout(id); };
-  }
-})();
+    if (typeof cic === 'function') {
+      ns.myCancelIdleCallback = cic.bind(window);
+    } else {
+      ns.myCancelIdleCallback = function (id) {
+        clearTimeout(id);
+      };
+    }
+  })();
 
   // Обновляет textContent только если реально изменилось
   ns.setTextIfChanged = function (el, value) {
@@ -41,24 +41,38 @@
     if (el.textContent !== str) el.textContent = str;
   };
 
-  // Toast
+  // Toast (безопасно для document_start: если body ещё нет — вешаем на documentElement)
   ns.showToast = function (message, duration = 2500) {
     try {
       const toast = document.createElement('div');
       toast.textContent = message;
+
       toast.style.cssText = `
         position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
         background: #222; color: #fff; padding: 12px 24px; border-radius: 12px;
         z-index: 999999; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
         opacity: 0; transition: opacity 0.3s ease;
+        pointer-events: none;
       `;
-      document.body.appendChild(toast);
-      requestAnimationFrame(() => (toast.style.opacity = '1'));
+
+      const root = document.body || document.documentElement;
+      if (!root) return;
+
+      root.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+      });
+
       setTimeout(() => {
         toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-      }, duration);
-    } catch (e) {
+        setTimeout(() => {
+          try {
+            toast.remove();
+          } catch {}
+        }, 320);
+      }, Math.max(0, Number(duration) || 0));
+    } catch {
       // ignore
     }
   };
@@ -73,6 +87,8 @@
     let lastArgs = null;
     let lastThis = null;
 
+    const d = Math.max(0, Number(delay) || 0);
+
     function invoke(now) {
       lastExec = now;
       const args = lastArgs;
@@ -83,7 +99,9 @@
         return fn.apply(ctx, args || []);
       } catch (e) {
         // не роняем расширение из-за одной ошибки в UI
-        try { console.error('[LUHT] throttled fn error', e); } catch {}
+        try {
+          console.error('[LUHT] throttled fn error', e);
+        } catch {}
       }
     }
 
@@ -98,7 +116,7 @@
       lastThis = this;
 
       const elapsed = now - lastExec;
-      const remaining = delay - elapsed;
+      const remaining = d - elapsed;
 
       if (remaining <= 0) {
         if (timer) {
@@ -136,14 +154,15 @@
 
   // Promise delay
   ns.delay = function (ms) {
-    return new Promise((res) => setTimeout(res, ms));
+    const t = Math.max(0, Number(ms) || 0);
+    return new Promise((res) => setTimeout(res, t));
   };
 
   // Safe error logger
   ns.logError = function (message, error) {
     try {
       console.error('[LUHT]', message, error);
-    } catch (e) {
+    } catch {
       // ignore
     }
   };

@@ -1,16 +1,19 @@
 // freezer.boot.js
-(function (ns) {
-  'use strict';
+'use strict';
 
+(function (ns) {
   const S = ns.state;
 
   // ============================
   //   CORE GUARD
   // ============================
   if (!window.LuhtSpeedCore) {
-    try { console.warn('LuhtSpeedCore not found, aborting freezer initialization.'); } catch {}
+    try {
+      console.warn('LuhtSpeedCore not found, aborting freezer initialization.');
+    } catch {}
     return;
   }
+
   ns.Core = window.LuhtSpeedCore;
   const Core = ns.Core;
 
@@ -18,12 +21,32 @@
   S.__booted = true;
 
   // ============================
+  //   SAFE APPEND
+  // ============================
+  function safeAppendToRoot(el) {
+    const root = document.documentElement || document;
+    try {
+      root.appendChild(el);
+    } catch {
+      document.addEventListener(
+        'DOMContentLoaded',
+        () => {
+          try {
+            (document.documentElement || document).appendChild(el);
+          } catch {}
+        },
+        { once: true }
+      );
+    }
+  }
+
+  // ============================
   //   PANEL UI (SPEEDOMETER)
   // ============================
   const panel = document.createElement('div');
   panel.className = 'luht-panel';
   panel.style.visibility = 'hidden';
-  document.documentElement.appendChild(panel);
+  safeAppendToRoot(panel);
 
   const header = document.createElement('div');
   header.className = 'luht-header';
@@ -62,19 +85,21 @@
     return { row, value: valueEl };
   };
 
-  const rTotal     = makeRow('Всего');
-  const r1m        = makeRow('За 1 мин');
-  const r5m        = makeRow('За 5 мин');
-  const r15m       = makeRow('За 15 мин');
-  const r60m       = makeRow('За 60 мин');
-  const rStreak    = makeRow('Серия > 80/мин');
-  const rBest      = makeRow('Лучшая серия');
-  const rActive    = makeRow('Активное');
+  const rTotal = makeRow('Всего');
+  const r1m = makeRow('За 1 мин');
+  const r5m = makeRow('За 5 мин');
+  const r15m = makeRow('За 15 мин');
+  const r60m = makeRow('За 60 мин');
+  const rStreak = makeRow('Серия > 80/мин');
+  const rBest = makeRow('Лучшая серия');
+  const rActive = makeRow('Активное');
   const rTotalTime = makeRow('Общее время');
-  const rStatus    = makeRow('Статус');
+  const rStatus = makeRow('Статус');
 
   // Turbo toggle inside panel
-  try { ns.createTurboToggle(rows); } catch (e) {}
+  try {
+    ns.createTurboToggle(rows);
+  } catch {}
 
   // ============================
   //   SPEED COLOR
@@ -105,9 +130,18 @@
     const st = Core.getState();
 
     const snapshot = [
-      st.totalCount, st.c1, st.c5, st.c15, st.c60,
-      st.streakMs, st.bestStreakMs,
-      st.warning ? 1 : 0, st.boost ? 1 : 0, st.paused ? 1 : 0,
+      st.totalCount,
+      st.c1,
+      st.c5,
+      st.c15,
+      st.c60,
+      st.streakMs,
+      st.bestStreakMs,
+      st.warning ? 1 : 0,
+      st.boost ? 1 : 0,
+      st.paused ? 1 : 0,
+      st.activeTimeMs,
+      st.totalTimeMs,
     ].join('|');
 
     if (!force && snapshot === lastStateSnapshot) return;
@@ -119,14 +153,14 @@
     ns.setTextIfChanged(r15m.value, st.c15);
     ns.setTextIfChanged(r60m.value, st.c60);
 
-    ns.setTextIfChanged(
-      rStreak.value,
-      st.streakMs > 0 ? Core.formatDuration(st.streakMs) : '—'
-    );
+    ns.setTextIfChanged(rStreak.value, st.streakMs > 0 ? Core.formatDuration(st.streakMs) : '—');
     ns.setTextIfChanged(
       rBest.value,
       st.bestStreakMs > 0 ? Core.formatDuration(st.bestStreakMs) : '—'
     );
+
+    ns.setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
+    ns.setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
 
     r1m.row.classList.toggle('luht-row-minute-good', st.c1 >= 100);
     r1m.row.classList.toggle('luht-row-minute-bad', st.c1 >= 90 && st.c1 < 100);
@@ -138,29 +172,36 @@
 
     ns.setTextIfChanged(
       rStatus.value,
-      st.paused ? 'Пауза… кликни метку' : (st.boost ? '⚡ Ускоренный режим' : 'Работаю')
+      st.paused ? 'Пауза… кликни метку' : st.boost ? '⚡ Ускоренный режим' : 'Работаю'
     );
 
     updateSpeedColor(st.c1);
   };
 
-  ns.throttledUpdatePanel = ns.throttleTrailing(ns.updatePanel, 200);
+  ns.throttledUpdatePanel = ns.throttleTrailing(() => ns.updatePanel(false), 200);
 
   // ============================
   //   LAST LABEL BADGE
   // ============================
   ns.ensureLabelBadge = function () {
-    if (!S.labelSection || !document.body.contains(S.labelSection)) {
-      S.labelSection = document.querySelector('#ticktock section.h-full');
-    }
-    if (!S.labelSection) return null;
+    try {
+      // body может быть null на document_start — просто не создаём пока
+      if (!document.body) return null;
 
-    if (!S.labelBadge || !S.labelSection.contains(S.labelBadge)) {
-      S.labelBadge = document.createElement('div');
-      S.labelBadge.className = 'luht-last-label';
-      S.labelSection.appendChild(S.labelBadge);
+      if (!S.labelSection || !document.body.contains(S.labelSection)) {
+        S.labelSection = document.querySelector('#ticktock section.h-full');
+      }
+      if (!S.labelSection) return null;
+
+      if (!S.labelBadge || !S.labelSection.contains(S.labelBadge)) {
+        S.labelBadge = document.createElement('div');
+        S.labelBadge.className = 'luht-last-label';
+        S.labelSection.appendChild(S.labelBadge);
+      }
+      return S.labelBadge;
+    } catch {
+      return null;
     }
-    return S.labelBadge;
   };
 
   ns.updateLastLabelBadge = function () {
@@ -213,41 +254,31 @@
   };
 
   // ============================
-  //   LOOPS (UI + TIME)
+  //   LOOPS (UI)
   // ============================
   let loopsStarted = false;
   let uiIntervalId = null;
-  let timeIntervalId = null;
-
-  function tickTimeOnce() {
-    const st = Core.getState();
-    ns.setTextIfChanged(rActive.value, Core.formatDuration(st.activeTimeMs));
-    ns.setTextIfChanged(rTotalTime.value, Core.formatDuration(st.totalTimeMs));
-  }
 
   function startLoops() {
     if (loopsStarted) return;
     loopsStarted = true;
 
-    // Время обновляем раз в секунду
-    tickTimeOnce();
-    timeIntervalId = setInterval(() => {
-      if (document.hidden) return;
-      tickTimeOnce();
-    }, 1000);
-
-    // UI (панель + бейдж) — ~5 раз/сек, но только если это имеет смысл
+    // UI (панель + бейдж) — ~5 раз/сек, но не мешаем кликам
     uiIntervalId = setInterval(() => {
       if (document.hidden) return;
-      if (S.isWorking) return; // пользователь кликает/переходит — не мешаем
+
+      // не душим пользователя, но обновлять список/счётчик можно
+      // (актуально для "обновление списка во время работы")
       ns.throttledUpdatePanel();
       ns.updateLastLabelBadge();
     }, 200);
   }
 
   function stopLoops() {
-    if (timeIntervalId) { clearInterval(timeIntervalId); timeIntervalId = null; }
-    if (uiIntervalId) { clearInterval(uiIntervalId); uiIntervalId = null; }
+    if (uiIntervalId) {
+      clearInterval(uiIntervalId);
+      uiIntervalId = null;
+    }
     loopsStarted = false;
   }
 
@@ -266,13 +297,13 @@
     if (activated) return;
     activated = true;
 
-    document.documentElement.classList.add('lcp-done');
-    panel.style.visibility = 'visible';
+    try {
+      document.documentElement.classList.add('lcp-done');
+    } catch {}
 
+    panel.style.visibility = 'visible';
     if (S.picker) S.picker.style.visibility = 'visible';
 
-    // Фоновые процессы у тебя стартуют в scheduler.startBackground(),
-    // но loops UI — здесь.
     startLoops();
   }
 
@@ -280,23 +311,41 @@
   try {
     const lcpObserver = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        // достаточно факта LCP-энтри
         if (entry) {
           activateFullUI();
-          try { lcpObserver.disconnect(); } catch {}
+          try {
+            lcpObserver.disconnect();
+          } catch {}
           break;
         }
       }
     });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
-  } catch (e) {}
+  } catch {}
 
-  // Фоллбек: ждём картинку, либо таймер
+  // Фоллбек: ждём картинку, либо таймер (с капом по времени, чтобы не вечный rAF)
   (function lcpFallback() {
-    if (activated) return;
-    const img = document.querySelector('img[alt="Image to annotate"]');
-    if (img && img.complete && img.naturalHeight > 0) activateFullUI();
-    else requestAnimationFrame(lcpFallback);
+    const started = Date.now();
+
+    const loop = () => {
+      if (activated) return;
+
+      const img = document.querySelector('img[alt="Image to annotate"]');
+      if (img && img.complete && img.naturalHeight > 0) {
+        activateFullUI();
+        return;
+      }
+
+      // кап ~3.5 сек на rAF, дальше таймер добьёт
+      if (Date.now() - started > 3500) return;
+      requestAnimationFrame(loop);
+    };
+
+    try {
+      requestAnimationFrame(loop);
+    } catch {
+      // если rAF недоступен — просто дадим таймеру добить
+    }
   })();
 
   setTimeout(() => {
@@ -308,40 +357,60 @@
   // ============================
   function setupHtmxListener() {
     if (S.__htmxListener) return;
+
     if (!document.body) {
       document.addEventListener('DOMContentLoaded', setupHtmxListener, { once: true });
       return;
     }
+
     S.__htmxListener = true;
 
     document.body.addEventListener('htmx:afterSwap', () => {
       ns.markWorking();
 
-      try { ns.Core.setAlreadyCounted(false); } catch {}
-      try { if (ns.Core.notifySwap) ns.Core.notifySwap(); } catch {}
+      try {
+        ns.Core.setAlreadyCounted(false);
+      } catch {}
+      try {
+        if (ns.Core.notifySwap) ns.Core.notifySwap();
+      } catch {}
 
       S.currentImg = null;
-      try { ns.applyImageTurbo(); } catch {}
+      try {
+        ns.applyImageTurbo();
+      } catch {}
 
       // Если URL показывает "задача завершена" — отметим и подчистим
       const finishedAdded = ns.markFinishedFromUrl();
       if (finishedAdded) {
-        try { ns.removeCompletedFromCache(); } catch {}
+        try {
+          ns.removeCompletedFromCache();
+        } catch {}
 
         S.taskList = ns.pruneFinishedFromList(S.taskList || []);
-        if (S.taskList.length) ns.saveCache(S.taskList);
+        if (S.taskList.length) {
+          try {
+            ns.saveCache(S.taskList);
+          } catch {}
+        }
 
         if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
         if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
 
         // Если задач мало — дотягиваем минимум
-        if ((S.taskList?.length || 0) < 5) {
-          ns.ensureTaskListMin(5).then((list) => {
-            S.taskList = list || [];
-            if (S.taskList.length) ns.saveCache(S.taskList);
-            if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
-            if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
-          }).catch(() => {});
+        if ((S.taskList && S.taskList.length) < 5) {
+          ns.ensureTaskListMin(5)
+            .then((list) => {
+              S.taskList = Array.isArray(list) ? list : [];
+              if (S.taskList.length) {
+                try {
+                  ns.saveCache(S.taskList);
+                } catch {}
+              }
+              if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
+              if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
+            })
+            .catch(() => {});
         }
       }
 
@@ -351,14 +420,20 @@
         const pruned = ns.pruneFinishedFromList(listFromDom);
         if (Array.isArray(pruned) && pruned.length) {
           S.taskList = pruned;
-          ns.saveCache(pruned);
+          try {
+            ns.saveCache(pruned);
+          } catch {}
           if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(pruned);
           if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
         }
       }
 
-      ns.throttledUpdatePanel(true);
-      ns.updateLastLabelBadge();
+      try {
+        ns.updatePanel(true);
+      } catch {}
+      try {
+        ns.updateLastLabelBadge();
+      } catch {}
 
       S.firstSwapDone = true;
       if (S.listBuilt && S.firstSwapDone) S.listReady = true;
@@ -374,13 +449,19 @@
     S.__initStarted = true;
 
     // 1) подчистим кэш от выполненных
-    try { ns.removeCompletedFromCache(); } catch {}
+    try {
+      ns.removeCompletedFromCache();
+    } catch {}
 
     // 2) UI списка задач
-    try { ns.createFreezerUI(); } catch {}
+    try {
+      ns.createFreezerUI();
+    } catch {}
 
     // 3) базово применим turbo на текущую картинку (если включено)
-    try { ns.applyImageTurbo(); } catch {}
+    try {
+      ns.applyImageTurbo();
+    } catch {}
 
     // 4) загрузка taskList
     let list = null;
@@ -396,18 +477,24 @@
           list = await ns.fetchTaskList(true);
         }
       }
-    } catch (e) {}
+    } catch {}
 
     list = ns.pruneFinishedFromList(list || []) || [];
     S.taskList = list;
 
     if (S.taskList.length) {
-      try { ns.saveCache(S.taskList); } catch {}
+      try {
+        ns.saveCache(S.taskList);
+      } catch {}
     }
 
     // UI обновляем только если панель реально открыта
-    try { ns.updateTaskListSmart(S.taskList); } catch {}
-    try { ns.updateActiveHighlight(); } catch {}
+    try {
+      ns.updateTaskListSmart(S.taskList);
+    } catch {}
+    try {
+      ns.updateActiveHighlight();
+    } catch {}
 
     // 5) flags ready
     const hasRealHtmx = !!document.querySelector('[hx-get]');
@@ -417,13 +504,19 @@
 
     // 6) через 100мс ещё раз добьём минимум (без агрессии)
     setTimeout(() => {
-      if ((S.taskList?.length || 0) < 5) {
-        ns.ensureTaskListMin(5).then((newList) => {
-          S.taskList = newList || [];
-          if (S.taskList.length) ns.saveCache(S.taskList);
-          if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
-          if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
-        }).catch(() => {});
+      if ((S.taskList && S.taskList.length) < 5) {
+        ns.ensureTaskListMin(5)
+          .then((newList) => {
+            S.taskList = Array.isArray(newList) ? newList : [];
+            if (S.taskList.length) {
+              try {
+                ns.saveCache(S.taskList);
+              } catch {}
+            }
+            if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
+            if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
+          })
+          .catch(() => {});
       }
     }, 100);
   };
@@ -434,27 +527,40 @@
 
     // Если уже на finished URL — обработаем
     if (ns.markFinishedFromUrl()) {
-      try { ns.removeCompletedFromCache(); } catch {}
+      try {
+        ns.removeCompletedFromCache();
+      } catch {}
       S.taskList = ns.pruneFinishedFromList(S.taskList || []);
-      if (S.taskList.length) ns.saveCache(S.taskList);
+      if (S.taskList.length) {
+        try {
+          ns.saveCache(S.taskList);
+        } catch {}
+      }
 
       if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
       if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
 
-      if ((S.taskList?.length || 0) < 5) {
+      if ((S.taskList && S.taskList.length) < 5) {
         try {
           const newList = await ns.ensureTaskListMin(5);
-          S.taskList = newList || [];
-          if (S.taskList.length) ns.saveCache(S.taskList);
+          S.taskList = Array.isArray(newList) ? newList : [];
+          if (S.taskList.length) {
+            try {
+              ns.saveCache(S.taskList);
+            } catch {}
+          }
           if (S.isOpen && ns.throttledUpdateList) ns.throttledUpdateList(S.taskList);
           if (ns.throttledUpdateHighlight) ns.throttledUpdateHighlight();
-        } catch (e) {}
+        } catch {}
       }
     }
 
     // Первичное обновление UI
-    ns.updatePanel(true);
-    ns.updateLastLabelBadge();
+    try {
+      ns.updatePanel(true);
+    } catch {}
+    try {
+      ns.updateLastLabelBadge();
+    } catch {}
   });
-
 })(window.LUHT.freezer);

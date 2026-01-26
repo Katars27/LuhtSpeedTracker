@@ -1,7 +1,7 @@
 // freezer.storage.js
-(function (ns) {
-  'use strict';
+'use strict';
 
+(function (ns) {
   const S = ns.state;
 
   // ============================
@@ -13,7 +13,7 @@
   if (finishedSync) {
     finishedSync.onmessage = () => {
       try {
-        // Обновляем список в памяти
+        // Обновляем список в памяти (НЕ ломаем дубликаты — filter по finished сохраняет повторы)
         S.taskList = ns.pruneFinishedFromList(S.taskList || []);
 
         // UI обновляем только если панель открыта
@@ -21,9 +21,7 @@
           ns.updateTaskListSmart(S.taskList);
           ns.updateActiveHighlight();
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch {}
     };
   }
 
@@ -77,19 +75,20 @@
       const raw = localStorage.getItem(ns.FINISHED_KEY);
       const arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr : [];
-    } catch (e) {
+    } catch {
       return [];
     }
   };
 
   ns.saveFinishedIds = function (ids) {
+    const arr = Array.isArray(ids) ? ids : [];
     try {
-      localStorage.setItem(ns.FINISHED_KEY, JSON.stringify(ids));
+      localStorage.setItem(ns.FINISHED_KEY, JSON.stringify(arr));
     } catch (e) {
       if (e && e.name === 'QuotaExceededError') {
         try {
-          localStorage.setItem(ns.FINISHED_KEY, JSON.stringify(ids.slice(-100)));
-        } catch (e2) {}
+          localStorage.setItem(ns.FINISHED_KEY, JSON.stringify(arr.slice(-100)));
+        } catch {}
       }
     }
 
@@ -97,11 +96,12 @@
     if (finishedSync) {
       try {
         finishedSync.postMessage('update');
-      } catch (e) {}
+      } catch {}
     }
   };
 
   // Удаляет из списка задачи, которые уже завершены
+  // ВАЖНО: не пытаемся дедупить — только фильтруем finished.
   ns.pruneFinishedFromList = function (list) {
     if (!Array.isArray(list) || list.length === 0) return list;
 
@@ -113,7 +113,9 @@
       const href = String(t && t.href ? t.href : '');
       if (!href) return false;
       const id = ns.getTaskIdFromPath(href);
-      return id && !finishedSet.has(id);
+      // если id не нашли — оставляем элемент (чтобы не потерять странные/новые ссылки)
+      if (!id) return true;
+      return !finishedSet.has(id);
     });
   };
 
@@ -139,7 +141,7 @@
       const raw = localStorage.getItem(ns.CACHE_KEY);
       const arr = raw ? JSON.parse(raw) : null;
       return Array.isArray(arr) ? arr : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   };
@@ -152,7 +154,7 @@
       if (e && e.name === 'QuotaExceededError') {
         try {
           localStorage.setItem(ns.CACHE_KEY, JSON.stringify(list.slice(-500)));
-        } catch (e2) {}
+        } catch {}
       }
     }
   };
@@ -168,7 +170,7 @@
     } else {
       try {
         localStorage.removeItem(ns.CACHE_KEY);
-      } catch (e) {}
+      } catch {}
     }
   };
 })(window.LUHT.freezer);

@@ -1,3 +1,4 @@
+// core.js
 'use strict';
 
 (function () {
@@ -32,6 +33,7 @@
   // ============================
   //   RUNTIME STATE
   // ============================
+  /** @type {number[]} */
   let timestamps = [];
   let totalCount = 0;
   let activeTimeMs = 0;
@@ -51,14 +53,16 @@
   let lowTempoSince = 0;
   let paused = true;
 
+  // этот флаг используется слоем UI/Freezer, чтобы не считать один и тот же тик/клик дважды
   let alreadyCounted = false;
 
   // ============================
   //   LOAD
   // ============================
   try {
-    timestamps = JSON.parse(localStorage.getItem(STORAGE_TS) || '[]');
-    if (!Array.isArray(timestamps)) timestamps = [];
+    const raw = localStorage.getItem(STORAGE_TS);
+    const arr = raw ? JSON.parse(raw) : [];
+    timestamps = Array.isArray(arr) ? arr : [];
   } catch {
     timestamps = [];
   }
@@ -67,7 +71,7 @@
   activeTimeMs = parseInt(localStorage.getItem(STORAGE_ACTIVE) || '0', 10) || 0;
 
   timestamps = timestamps
-    .map((x) => (typeof x === 'number' ? x : parseInt(x, 10)))
+    .map((x) => (typeof x === 'number' ? x : parseInt(String(x), 10)))
     .filter((x) => Number.isFinite(x) && x > 0)
     .sort((a, b) => a - b);
 
@@ -87,7 +91,9 @@
       localStorage.setItem(STORAGE_STREAK_BEST, String(bestStreakMs));
       localStorage.setItem(STORAGE_LAST_CLICK, String(lastClickTS || 0));
     } catch (e) {
-      try { console.warn('localStorage save failed:', e); } catch {}
+      try {
+        console.warn('localStorage save failed:', e);
+      } catch {}
     }
   }
 
@@ -111,6 +117,7 @@
     if (document.hidden) {
       maybePersist(Date.now(), true);
     } else {
+      // чтобы delta не стала огромной после возвращения
       lastActiveTS = Date.now();
     }
   });
@@ -134,6 +141,7 @@
     timestamps.push(now);
     totalCount++;
 
+    // защита от раздувания
     if (timestamps.length > 12000) {
       timestamps.splice(0, timestamps.length - 10000);
     }
@@ -141,11 +149,18 @@
     registerClickActivity();
   }
 
+  // аккуратное "назад": убираем только если последнее событие реально похоже на "текущий клик"
   function backEvent() {
     const now = Date.now();
-    if (timestamps.length) timestamps.pop();
+
+    if (timestamps.length) {
+      // если кто-то случайно вызвал back два раза подряд — не уводим в минус/хаос
+      timestamps.pop();
+    }
+
     if (totalCount > 0) totalCount--;
-    alreadyCounted = false
+
+    alreadyCounted = false;
     maybePersist(now, true);
   }
 
@@ -176,34 +191,40 @@
       localStorage.removeItem(STORAGE_STREAK_BEST);
       localStorage.removeItem(STORAGE_LAST_CLICK);
     } catch (e) {
-      try { console.warn('localStorage clear failed:', e); } catch {}
+      try {
+        console.warn('localStorage clear failed:', e);
+      } catch {}
     }
   }
 
   // ============================
   //   COUNT HELPERS (бинарный поиск)
   // ============================
-  function countIn(msWindow, now) {
-    const cutoff = now - msWindow;
-
+  function lowerBound(arr, value) {
     let left = 0;
-    let right = timestamps.length;
+    let right = arr.length;
     while (left < right) {
       const mid = (left + right) >> 1;
-      if (timestamps[mid] >= cutoff) right = mid;
+      if (arr[mid] >= value) right = mid;
       else left = mid + 1;
     }
-    return timestamps.length - left;
+    return left;
+  }
+
+  function countIn(msWindow, now) {
+    const cutoff = now - msWindow;
+    const idx = lowerBound(timestamps, cutoff);
+    return timestamps.length - idx;
   }
 
   let lastPruneTS = 0;
   function pruneOld(now) {
+    // не чаще чем раз в 20 секунд
     if (now - lastPruneTS < 20000) return;
     lastPruneTS = now;
 
     const cutoff = now - WINDOW_60M;
-    let idx = 0;
-    while (idx < timestamps.length && timestamps[idx] < cutoff) idx++;
+    const idx = lowerBound(timestamps, cutoff);
     if (idx > 0) timestamps.splice(0, idx);
   }
 
@@ -231,14 +252,17 @@
 
     return {
       totalCount,
-      c1, c5, c15, c60,
+      c1,
+      c5,
+      c15,
+      c60,
       activeTimeMs,
       totalTimeMs,
       streakMs,
       bestStreakMs,
       boost: boostActive,
       warning: warningActive,
-      paused
+      paused,
     };
   }
 
@@ -248,6 +272,10 @@
   function tick() {
     try {
       const now = Date.now();
+
+      // delta считаем так, чтобы:
+      // - после сна/переключения вкладки не улетало в космос
+      // - не плодить активное время, когда вкладка скрыта
       let delta = now - lastActiveTS;
       lastActiveTS = now;
 
@@ -257,9 +285,9 @@
       pruneOld(now);
 
       const isPaused =
-        (totalTimeStart === 0) ||
+        totalTimeStart === 0 ||
         document.hidden ||
-        (now - lastClickTS > PAUSE_AFTER_NO_CLICK_MS);
+        now - lastClickTS > PAUSE_AFTER_NO_CLICK_MS;
 
       paused = isPaused;
 
@@ -271,6 +299,7 @@
         totalTimeMs = now - totalTimeStart;
       }
 
+      // авто-сброс, если "неактивности" (total-active) слишком много
       const idleGap = totalTimeMs - activeTimeMs;
       if (idleGap > IDLE_RESET_THRESHOLD_MS) {
         resetAll();
@@ -280,6 +309,7 @@
       const c1 = countIn(60_000, now);
       const c20 = countIn(20_000, now);
 
+      // streak: считаем только во время активности
       if (!isPaused && c1 >= 80) {
         streakMs += delta;
         if (streakMs > bestStreakMs) bestStreakMs = streakMs;
@@ -287,6 +317,7 @@
         streakMs = 0;
       }
 
+      // boost hysteresis
       if (!isPaused) {
         if (c20 >= 30) boostActive = true;
         else if (c20 <= 28) boostActive = false;
@@ -294,6 +325,7 @@
         boostActive = false;
       }
 
+      // warning logic
       if (!isPaused) {
         if (c1 >= 80) {
           wasHighTempo = true;
@@ -314,7 +346,9 @@
 
       maybePersist(now, false);
     } catch (e) {
-      try { console.error('core tick error:', e); } catch {}
+      try {
+        console.error('core tick error:', e);
+      } catch {}
     }
   }
 
@@ -337,8 +371,10 @@
     getState,
     formatDuration,
     getAlreadyCounted: () => alreadyCounted,
-    setAlreadyCounted: (v) => { alreadyCounted = !!v; },
+    setAlreadyCounted: (v) => {
+      alreadyCounted = !!v;
+    },
     registerClickActivity,
-    notifySwap
+    notifySwap,
   };
 })();

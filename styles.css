@@ -1,10 +1,10 @@
 /* ============================================
-   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe (FIXED)
-   Цели:
-   - ДО LCP: минимум paint/blur/gradients/animations/тяжёлых теней
-   - ПОСЛЕ LCP (.lcp-done на <html>): полный неон-вайб включается
-   - Уважение prefers-reduced-motion
-   - Убраны логические противоречия (раньше ты сам себе выключал transition в конце файла навсегда)
+   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe (FIXED v2)
+   - ДО LCP: минимум тяжёлых эффектов (blur/gradients/animations/тяжёлые тени)
+   - ПОСЛЕ LCP (класс .lcp-done на <html>): включаем неон
+   - prefers-reduced-motion уважён
+   - Убраны противоречия: до LCP у интерактива НЕТ transition/animation
+   - Фикс позиционирования бейджа метки (нужен relative контейнер)
 ============================================ */
 
 /* ====== Reduced motion — всегда ====== */
@@ -47,6 +47,11 @@ body:has(#ticktock) {
   position: relative;
 }
 
+/* Контейнер для бейджа метки (иначе absolute уедет в космос) */
+body:has(#ticktock) #ticktock section.h-full {
+  position: relative !important;
+}
+
 /* Панель статистики */
 .luht-panel {
   position: fixed;
@@ -71,14 +76,20 @@ body:has(#ticktock) {
   overflow-y: auto;
 }
 
-/* ДО LCP — никаких transition на часто перерисовываемом */
+/* ДО LCP — никаких transition/animation на часто перерисовываемом */
 .luht-panel,
 .luht-row,
 .luht-btn,
 .luht-freezer-btn,
 .luht-freezer-panel,
-.luht-last-label {
+.luht-freezer-item,
+.luht-last-label,
+.luht-watchdog-toggle,
+body:has(#ticktock) aside button[name="label"],
+body:has(#ticktock) aside a[href*="/queue/"],
+body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
   transition: none !important;
+  animation: none !important;
 }
 
 .luht-panel:hover { opacity: 1; }
@@ -279,14 +290,10 @@ body:has(#ticktock) .luht-last-label {
   white-space: nowrap;
   pointer-events: none;
   z-index: 50;
-
   opacity: 0;
-  /* show/hide делаем мгновенно ДО LCP — без transition */
 }
 
-body:has(#ticktock) .luht-last-label.show {
-  opacity: 1;
-}
+body:has(#ticktock) .luht-last-label.show { opacity: 1; }
 
 /* =========================================================
    FULL VIBE (после LCP): разрешаем красивые штуки
@@ -303,20 +310,28 @@ body:has(#ticktock) .luht-last-label.show {
   inset: 0;
   background:
     radial-gradient(circle at 30% 40%, rgba(255, 51, 153, 0.12), transparent 70%),
-    radial-gradient(circle at 70% 60%, rgba(255, 102, 170, 0.1), transparent 70%);
+    radial-gradient(circle at 70% 60%, rgba(255, 102, 170, 0.10), transparent 70%);
   opacity: 0.8;
   pointer-events: none;
   animation: floatLight 20s ease-in-out infinite;
 }
 
-/* После LCP можно transitions (но аккуратно: не на часто меняемых тексте) */
+/* После LCP можно transitions (но аккуратно: не на часто меняемом тексте) */
 .lcp-done .luht-panel,
 .lcp-done .luht-freezer-btn,
 .lcp-done .luht-freezer-panel,
 .lcp-done .luht-freezer-item,
 .lcp-done .luht-btn,
-.lcp-done body:has(#ticktock) .luht-last-label {
+.lcp-done body:has(#ticktock) .luht-last-label,
+.lcp-done .luht-watchdog-toggle {
   transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease !important;
+}
+
+/* И вот здесь — включаем hover/transition для sidebar кнопок и списка задач */
+.lcp-done body:has(#ticktock) aside button[name="label"],
+.lcp-done body:has(#ticktock) aside a[href*="/queue/"],
+.lcp-done body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
 }
 
 .lcp-done .luht-panel {
@@ -354,9 +369,7 @@ body:has(#ticktock) .luht-last-label.show {
   text-shadow: 0 1px 6px rgba(0,0,0,0.7), 0 0 10px rgba(255, 51, 153, 0.5);
 }
 
-.lcp-done .luht-boost-badge {
-  animation: luhtPulse 1s ease-in-out infinite alternate;
-}
+.lcp-done .luht-boost-badge { animation: luhtPulse 1s ease-in-out infinite alternate; }
 
 .lcp-done .luht-row-warning .luht-row-value {
   color: var(--glow-yellow) !important;
@@ -481,7 +494,6 @@ body:has(#ticktock) aside a[href*="/queue/"] {
   color: var(--text) !important;
   font-size: 13px !important;
   font-weight: 500 !important;
-  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 body:has(#ticktock) aside button[name="label"]:active { transform: scale(0.95); }
@@ -513,7 +525,6 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   color: #f0f0f0 !important;
   text-decoration: none !important;
-  transition: all 0.2s ease;
 }
 
 body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
@@ -543,7 +554,7 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
   }
 }
 
-/* Finish page — всегда вайб */
+/* Finish page — оставляем вайб (это уже не LCP на странице разметки) */
 body > div.flex {
   background: linear-gradient(135deg, rgba(153,51,102,0.2), rgba(255,51,153,0.2)), rgba(26,18,24,0.85);
   padding: 40px 24px;
@@ -556,7 +567,6 @@ body > div.flex {
   margin: 60px auto;
   text-align: center;
   position: relative;
-  transition: all 0.3s ease;
 }
 
 body > div.flex::before {
@@ -587,11 +597,11 @@ body > div.flex h2 {
   text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 body > div.flex p { margin-top: 12px; font-size: 1.125rem; color: #ffd1e6cc; }
-body > div.flex a { color: #ff66aa; font-weight: 600; text-decoration: none; transition: 0.2s ease; }
+body > div.flex a { color: #ff66aa; font-weight: 600; text-decoration: none; }
 body > div.flex a:hover { color: #ff3399; text-shadow: 0 0 6px #ff3399; }
 
 /* =========================================================
-   Animations (только после LCP реально “видно”)
+   Animations
 ========================================================= */
 @keyframes luhtGradientMove {
   0%   { background-position: 0% 50%; }

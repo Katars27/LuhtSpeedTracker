@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Luht Speed Tracker v2",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Статистика скорости разметки, красивый розовый UI и турбо-ускорение сайта",
   "icons": {
     "128": "icon128.png"
@@ -10,7 +10,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://luht.tp2.intropy.tech/*"
+    "https://luht.tp2.intropy.tech/v2/*"
   ],
   "content_scripts": [
     {

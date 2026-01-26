@@ -6,14 +6,29 @@
   if (window.__luht_injector_loaded) return;
   window.__luht_injector_loaded = true;
 
+  // безопасный bootstrap неймспейсов (чтобы другие файлы могли опираться на это без сюрпризов)
+  window.LUHT = window.LUHT || {};
+  window.LUHT.freezer = window.LUHT.freezer || {};
+
   const domains = [
     'https://luht.tp2.intropy.tech',
     'https://fonts.googleapis.com',
     'https://fonts.gstatic.com',
   ];
 
+  const FONT_CSS_HREF =
+    'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap';
+
   const PRECONNECT_MARK = 'data-luht-preconnect';
   const PRELOAD_MARK = 'data-luht-preload-geist';
+
+  const escapeCss = (s) => {
+    try {
+      if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') return CSS.escape(String(s));
+    } catch (e) {}
+    // минимальный фоллбек: экранируем кавычки и обратные слэши
+    return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  };
 
   function ensureHeadReady() {
     return !!(document.head && document.head.appendChild);
@@ -21,17 +36,23 @@
 
   function alreadyHasLink(rel, href, markAttr) {
     if (!document.head) return false;
-    const sel = markAttr
-      ? `link[rel="${rel}"][${markAttr}="1"]`
-      : `link[rel="${rel}"][href="${CSS.escape(href)}"]`;
+
+    const relSel = `link[rel="${escapeCss(rel)}"]`;
+    const hrefSel = `href="${escapeCss(href)}"`;
+    const markSel = markAttr ? `[${markAttr}="1"]` : '';
+
+    // ВАЖНО: даже если есть маркер — всё равно проверяем href,
+    // иначе один preconnect с маркером заблокирует добавление остальных доменов.
+    const sel = `${relSel}[${hrefSel}]${markSel}`;
     if (document.head.querySelector(sel)) return true;
 
-    // fallback: если не нашли по маркеру — ищем по rel+href (на случай старых версий)
-    return !!document.head.querySelector(`link[rel="${rel}"][href="${CSS.escape(href)}"]`);
+    // fallback: на случай старых версий без маркера
+    return !!document.head.querySelector(`${relSel}[${hrefSel}]`);
   }
 
   function addLink({ rel, href, as, crossOrigin, mark }) {
     if (!document.head) return;
+    if (!href || !rel) return;
     if (alreadyHasLink(rel, href, mark)) return;
 
     const link = document.createElement('link');
@@ -48,7 +69,7 @@
   function inject() {
     if (!ensureHeadReady()) return false;
 
-    // preconnect (без дублей)
+    // preconnect (без дублей, но с поддержкой нескольких доменов)
     for (const domain of domains) {
       addLink({
         rel: 'preconnect',
@@ -61,16 +82,15 @@
     // preload CSS Google Fonts (Geist)
     addLink({
       rel: 'preload',
-      href: 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap',
+      href: FONT_CSS_HREF,
       as: 'style',
       mark: PRELOAD_MARK,
     });
 
-    // ВАЖНО: preload не применяет стиль сам по себе.
-    // Чтобы реально ускорить и применить шрифт — добавим stylesheet, если его ещё нет.
+    // preload не применяет стиль — добавляем stylesheet (без дублей)
     addLink({
       rel: 'stylesheet',
-      href: 'https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap',
+      href: FONT_CSS_HREF,
       mark: PRELOAD_MARK,
     });
 
@@ -85,15 +105,24 @@
     if (inject()) observer.disconnect();
   });
 
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  try {
+    observer.observe(document.documentElement || document, { childList: true, subtree: true });
+  } catch (e) {
+    // если observe упал — попробуем ещё раз на DOMContentLoaded
+  }
 
   // На всякий: после DOMContentLoaded тоже попробуем (и отцепимся)
   document.addEventListener(
     'DOMContentLoaded',
     () => {
-      inject();
-      observer.disconnect();
+      try { inject(); } catch (e) {}
+      try { observer.disconnect(); } catch (e) {}
     },
     { once: true }
   );
+
+  // страховка: не держим наблюдатель вечно
+  setTimeout(() => {
+    try { observer.disconnect(); } catch (e) {}
+  }, 10_000);
 })();
