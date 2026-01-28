@@ -64,44 +64,25 @@
     const root = document.documentElement || document;
     try {
       root.appendChild(el);
-    } catch (e) {
+    } catch {
       ensureBody(() => {
         try {
-          (document.body || root).appendChild(el);
-        } catch (_) {}
+          (document.documentElement || document.body || root).appendChild(el);
+        } catch {}
       });
     }
   }
 
   function createToggleButton() {
-    if (toggleBtn) return;
+    if (toggleBtn && (document.documentElement || document).contains(toggleBtn)) return;
 
     toggleBtn = document.createElement('button');
     toggleBtn.className = 'luht-watchdog-toggle';
+    toggleBtn.type = 'button';
     toggleBtn.textContent = '🛠';
     toggleBtn.title = 'WatchDog PRO (Ctrl+Shift+D)';
-
-    Object.assign(toggleBtn.style, {
-      position: 'fixed',
-      bottom: 'calc(env(safe-area-inset-bottom, 20px) + 20px)',
-      right: '20px',
-      zIndex: '1000002',
-      width: '56px',
-      height: '56px',
-      fontSize: '28px',
-      background: 'rgba(136, 136, 255, 0.35)',
-      border: '2px solid #8888ff',
-      borderRadius: '50%',
-      backdropFilter: 'blur(12px)',
-      boxShadow: '0 4px 20px rgba(136, 136, 255, 0.5)',
-      cursor: 'pointer',
-      transition: 'all 0.25s ease',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      userSelect: 'none',
-      WebkitUserSelect: 'none',
-    });
+    toggleBtn.setAttribute('aria-pressed', window.LuhtWatchDogActive ? 'true' : 'false');
+    if (window.LuhtWatchDogActive) toggleBtn.classList.add('is-on');
 
     toggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -113,101 +94,44 @@
   }
 
   function createPanel() {
-    if (panel) return;
+    if (panel && (document.documentElement || document).contains(panel)) return;
 
     panel = document.createElement('div');
     panel.className = 'luht-watchdog-panel';
     panel.id = ROOT_ID;
 
-    Object.assign(panel.style, {
-      position: 'fixed',
-      bottom: 'calc(env(safe-area-inset-bottom, 20px) + 86px)',
-      right: '20px',
-      width: 'min(460px, calc(100vw - 40px))',
-      maxHeight: '70vh',
-      background: 'rgba(26, 18, 24, 0.95)',
-      border: '2px solid #cc4488',
-      borderRadius: '16px',
-      color: '#ffd1e6',
-      fontFamily:
-        'GeistVariable, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-      fontSize: '13px',
-      zIndex: '1000001',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.8), 0 0 40px rgba(255,51,153,0.3)',
-      backdropFilter: 'blur(14px)',
-      opacity: '0',
-      transform: 'translateY(20px)',
-      transition: 'opacity 0.25s ease, transform 0.25s ease',
-      overflow: 'hidden',
-      display: 'none',
-      flexDirection: 'column',
-    });
-
     // Header
     const header = document.createElement('div');
-    Object.assign(header.style, {
-      padding: '12px 16px',
-      background: 'linear-gradient(90deg, #cc4488, #ff3399, #ff66aa)',
-      fontWeight: 'bold',
-      fontSize: '15px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      userSelect: 'none',
-      WebkitUserSelect: 'none',
-    });
+    header.className = 'luht-watchdog-header';
 
     const headerTitle = document.createElement('div');
+    headerTitle.className = 'luht-watchdog-title';
     headerTitle.textContent = '🛠 WATCHDOG PRO';
     header.appendChild(headerTitle);
 
-    const closeBtn = document.createElement('span');
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'luht-watchdog-close';
+    closeBtn.type = 'button';
     closeBtn.textContent = '×';
-    Object.assign(closeBtn.style, {
-      fontSize: '24px',
-      cursor: 'pointer',
-      userSelect: 'none',
-      WebkitUserSelect: 'none',
-      lineHeight: '1',
-      padding: '0 4px',
-    });
+    closeBtn.title = 'Закрыть';
     closeBtn.onclick = deactivate;
     header.appendChild(closeBtn);
 
     // Controls
     const controls = document.createElement('div');
-    Object.assign(controls.style, {
-      padding: '8px 16px',
-      background: '#1a1218',
-      display: 'flex',
-      gap: '12px',
-      flexWrap: 'wrap',
-    });
+    controls.className = 'luht-watchdog-controls';
 
     const exportBtn = document.createElement('button');
+    exportBtn.className = 'luht-watchdog-btn luht-watchdog-btn-primary';
+    exportBtn.type = 'button';
     exportBtn.textContent = 'Экспорт';
-    Object.assign(exportBtn.style, {
-      background: '#ff66aa',
-      color: '#000',
-      border: 'none',
-      padding: '8px 14px',
-      borderRadius: '10px',
-      cursor: 'pointer',
-      fontWeight: 'bold',
-    });
     exportBtn.onclick = exportLog;
     controls.appendChild(exportBtn);
 
     const clearBtn = document.createElement('button');
+    clearBtn.className = 'luht-watchdog-btn';
+    clearBtn.type = 'button';
     clearBtn.textContent = 'Очистить';
-    Object.assign(clearBtn.style, {
-      background: '#444',
-      color: '#fff',
-      border: 'none',
-      padding: '8px 14px',
-      borderRadius: '10px',
-      cursor: 'pointer',
-    });
     clearBtn.onclick = () => {
       logs = [];
       pendingEntries = [];
@@ -219,17 +143,16 @@
 
     // Log body
     logBody = document.createElement('div');
-    Object.assign(logBody.style, {
-      padding: '12px',
-      flex: '1',
-      overflowY: 'auto',
-      maxHeight: 'calc(70vh - 100px)',
-      overscrollBehavior: 'contain',
-    });
+    logBody.className = 'luht-watchdog-body';
 
     panel.appendChild(header);
     panel.appendChild(controls);
     panel.appendChild(logBody);
+
+    // состояние по умолчанию
+    panel.style.display = 'none';
+    panel.style.opacity = '0';
+    panel.style.transform = 'translateY(20px)';
 
     safeAppendToRoot(panel);
   }
@@ -244,28 +167,24 @@
 
       const frag = document.createDocumentFragment();
 
-      // вставляем сверху батчем
       const take = Math.min(MAX_FLUSH_PER_FRAME, pendingEntries.length);
       for (let i = 0; i < take; i++) {
         const it = pendingEntries[i];
         const entry = document.createElement('div');
-        entry.style.marginBottom = '6px';
+        entry.className = 'luht-watchdog-entry';
         entry.innerHTML = it.html;
         frag.appendChild(entry);
       }
 
-      // удаляем использованные элементы
       pendingEntries.splice(0, take);
 
       logBody.insertBefore(frag, logBody.firstChild);
 
-      // лимит DOM-нод
       while (logBody.childNodes.length > MAX_LOGS) {
         if (!logBody.lastChild) break;
         logBody.removeChild(logBody.lastChild);
       }
 
-      // если ещё есть — дожмём следующими кадрами
       if (pendingEntries.length > 0) scheduleFlush();
     });
   }
@@ -277,8 +196,8 @@
     const safeMsg = escapeHtml(String(message || ''));
 
     const html =
-      `<span style="color:#ff99cc">[${time}]</span> ` +
-      `<span style="color:#ff66aa;font-weight:bold">[${safeType}]</span> ` +
+      `<span class="luht-wd-time">[${escapeHtml(time)}]</span> ` +
+      `<span class="luht-wd-type">[${safeType}]</span> ` +
       `${safeMsg}`;
 
     const text = `[${time}] [${safeType}] ${String(message || '')}`;
@@ -286,7 +205,6 @@
     logs.unshift(text);
     if (logs.length > MAX_LOGS) logs.pop();
 
-    // панель может быть ещё не создана — ок
     if (!logBody) return;
 
     pendingEntries.unshift({ html, text });
@@ -309,7 +227,6 @@
       'WATCHDOG PRO LOG\n' +
       'URL: ' + location.href + '\n' +
       'UA: ' + (navigator.userAgent || '-') + '\n\n' +
-      // в файл — по времени сверху вниз
       logs.slice().reverse().join('\n');
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -326,7 +243,7 @@
         root.appendChild(a);
         a.click();
         a.remove();
-      } catch (e) {}
+      } catch {}
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   }
@@ -353,7 +270,6 @@
       for (const mut of mutations) {
         if (isInsideOwnUI(mut.target)) continue;
 
-        // htmx и большие куски — часто шумят, пропускаем
         if (
           mut.target &&
           mut.target.closest &&
@@ -401,10 +317,13 @@
 
   function openPanel() {
     if (!panel) return;
+
     panel.style.display = 'flex';
     panel.style.opacity = '0';
     panel.style.transform = 'translateY(20px)';
+
     requestAnimationFrame(() => {
+      if (!panel) return;
       panel.style.opacity = '1';
       panel.style.transform = 'translateY(0)';
     });
@@ -412,8 +331,10 @@
 
   function closePanel() {
     if (!panel) return;
+
     panel.style.opacity = '0';
     panel.style.transform = 'translateY(20px)';
+
     setTimeout(() => {
       if (!window.LuhtWatchDogActive && panel) panel.style.display = 'none';
     }, CLOSE_ANIM_MS);
@@ -427,8 +348,7 @@
     createPanel();
 
     if (toggleBtn) {
-      toggleBtn.style.transform = 'scale(1.08)';
-      toggleBtn.style.boxShadow = '0 0 30px rgba(255,106,193,0.8)';
+      toggleBtn.classList.add('is-on');
       toggleBtn.setAttribute('aria-pressed', 'true');
     }
 
@@ -447,12 +367,10 @@
     closePanel();
 
     if (toggleBtn) {
-      toggleBtn.style.transform = 'scale(1)';
-      toggleBtn.style.boxShadow = '0 4px 20px rgba(136, 136, 255, 0.5)';
+      toggleBtn.classList.remove('is-on');
       toggleBtn.setAttribute('aria-pressed', 'false');
     }
 
-    // DOM-лог чистим, но текстовый logs оставляем (можно экспортнуть после закрытия)
     pendingEntries = [];
     flushScheduled = false;
     if (logBody) logBody.innerHTML = '';

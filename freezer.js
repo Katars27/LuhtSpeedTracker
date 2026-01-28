@@ -23,21 +23,20 @@
   }
 
   function showToast(message, duration = 2500) {
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: #222; color: #fff; padding: 12px 24px; border-radius: 12px;
-      z-index: 999999; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-      opacity: 0; transition: opacity 0.3s ease;
-    `;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => (toast.style.opacity = '1'));
-    setTimeout(() => {
-      toast.style.opacity = '0';
-      setTimeout(() => toast.remove(), 300);
-    }, duration);
-  }
+  const toast = document.createElement('div');
+  toast.className = 'luht-toast';
+  toast.textContent = message;
+
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('show'));
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 180);
+  }, duration);
+}
+
 
   // trailing throttle: не теряет последнее обновление
   function throttleTrailing(fn, delay) {
@@ -474,60 +473,43 @@
   const rTotalTime = makeRow('Общее время');
   const rStatus = makeRow('Статус');
 
-  function createFreezerUI() {
-    const btn = document.createElement('button');
-    btn.className = 'luht-freezer-btn';
-    btn.textContent = '📋';
-    btn.title = 'Открыть список задач (F)';
-    btn.style.cssText = `
-      position: fixed !important;
-      top: calc(env(safe-area-inset-top, 20px) + 20px) !important;
-      right: 20px !important;
-      z-index: 1000001 !important;
-      width: 56px !important;
-      height: 56px !important;
-      font-size: 32px !important;
-      background: rgba(255, 106, 193, 0.35) !important;
-      border: 2px solid #ff6ac1 !important;
-      border-radius: 50% !important;
-      backdrop-filter: blur(12px) !important;
-      box-shadow: 0 4px 20px rgba(255, 106, 193, 0.5) !important;
-      cursor: pointer !important;
-      transition: all 0.2s ease !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    `;
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      togglePicker();
-    });
-    document.documentElement.appendChild(btn);
-    window.luhtFreezerBtn = btn;
+function createFreezerUI() {
+  // ----- BUTTON -----
+  const btn = document.createElement('button');
+  btn.className = 'luht-freezer-btn';
+  btn.textContent = '📋';
+  btn.title = 'Открыть список задач (F)';
 
-    picker = document.createElement('div');
-    picker.className = 'luht-freezer-panel';
-    picker.style.display = 'none';
-    picker.style.visibility = 'hidden';
-    picker.style.opacity = '0';
-    picker.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-    picker.style.transform = 'translateY(20px)';
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePicker();
+  });
 
-    const h = document.createElement('div');
-    h.className = 'luht-freezer-header';
-    h.textContent = 'СПИСОК ЗАДАЧ';
-    picker.appendChild(h);
+  document.documentElement.appendChild(btn);
+  window.luhtFreezerBtn = btn;
 
-    pickerList = document.createElement('div');
-    pickerList.className = 'luht-freezer-list';
-    pickerList.style.overflowY = 'auto';
-    pickerList.style.scrollBehavior = 'smooth';
-    picker.appendChild(pickerList);
+  // ----- PANEL -----
+  picker = document.createElement('div');
+  picker.className = 'luht-freezer-panel';
+  picker.setAttribute('hx-preserve', '');
 
-    picker.setAttribute('hx-preserve', '');
-    document.documentElement.appendChild(picker);
-  }
+  // ВАЖНО: не задаём transition/transform инлайном — это делает CSS (до/после LCP)
+  picker.style.display = 'none';
+  picker.style.visibility = 'hidden';
+
+  const h = document.createElement('div');
+  h.className = 'luht-freezer-header';
+  h.textContent = 'СПИСОК ЗАДАЧ';
+  picker.appendChild(h);
+
+  pickerList = document.createElement('div');
+  pickerList.className = 'luht-freezer-list';
+  picker.appendChild(pickerList);
+
+  document.documentElement.appendChild(picker);
+}
+
 
   function updateTaskListSmart(newList) {
     if (!Array.isArray(newList) || !pickerList || !isOpen) return;
@@ -784,44 +766,44 @@
     } catch (e) {}
   }
 
-  function openPicker() {
-    if (!picker) return;
-    if (document.hidden) return;
+function openPicker() {
+  if (!picker) return;
+  if (document.hidden) return;
 
-    isOpen = true;
-    picker.style.display = 'flex';
+  isOpen = true;
+  picker.style.display = 'flex';
 
-    requestAnimationFrame(() => {
-      picker.style.opacity = '1';
-      picker.style.transform = 'translateY(0)';
-    });
+  // CSS сам решит, как показать (до LCP без анимаций, после LCP — мягко)
+  picker.classList.add('is-open');
 
-    if (pickerList) {
-      const msg = document.createElement('div');
-      msg.style.cssText = 'text-align:center;padding:20px;color:#aaa;';
-      msg.textContent = 'Загрузка списка...';
-      pickerList.replaceChildren(msg);
-    }
+  if (pickerList) {
+    const msg = document.createElement('div');
+    msg.className = 'luht-freezer-empty';
+    msg.textContent = 'Загрузка списка...';
+    pickerList.replaceChildren(msg);
+  }
 
-    throttledUpdateList(taskList || []);
+  throttledUpdateList(taskList || []);
+  throttledUpdateHighlight();
+
+  myRequestIdleCallback(async () => {
+    const list = await ensureTaskListMin(5);
+    if (isOpen) throttledUpdateList(list);
     throttledUpdateHighlight();
+  });
+}
 
-    myRequestIdleCallback(async () => {
-      const list = await ensureTaskListMin(5);
-      if (isOpen) throttledUpdateList(list);
-      throttledUpdateHighlight();
-    });
-  }
+function closePicker() {
+  if (!picker) return;
+  picker.classList.remove('is-open');
 
-  function closePicker() {
-    if (!picker) return;
-    picker.style.opacity = '0';
-    picker.style.transform = 'translateY(20px)';
-    setTimeout(() => {
-      picker.style.display = 'none';
-      isOpen = false;
-    }, 300);
-  }
+  // даём CSS-анимации (если .lcp-done) отыграть, потом hide
+  setTimeout(() => {
+    picker.style.display = 'none';
+    isOpen = false;
+  }, 180);
+}
+
 
   function togglePicker() {
     markWorking();

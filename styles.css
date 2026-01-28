@@ -1,10 +1,10 @@
 /* ============================================
-   LUHT SPEED TRACKER v2 — Mirror Selfie Pink Vibe (FIXED v2)
-   - ДО LCP: минимум тяжёлых эффектов (blur/gradients/animations/тяжёлые тени)
-   - ПОСЛЕ LCP (класс .lcp-done на <html>): включаем неон
+   LUHT SPEED TRACKER v2 — SMART NEO-BRUTAL (v3)
+   Цель:
+   - ДО LCP: максимум лёгкости (no blur / no gradients / no animations / no heavy shadows)
+   - ПОСЛЕ LCP (.lcp-done на <html>): "умные" детали: offset-shadow, штампы, аккуратные акценты
    - prefers-reduced-motion уважён
-   - Убраны противоречия: до LCP у интерактива НЕТ transition/animation
-   - Фикс позиционирования бейджа метки (нужен relative контейнер)
+   - FIX: transform не ломает scale на адаптиве (через CSS vars)
 ============================================ */
 
 /* ====== Reduced motion — всегда ====== */
@@ -18,60 +18,83 @@
 }
 
 /* ====== Vars ====== */
-:root {
-  --bg: #1a1218;
-  --secondary: #241826;
-  --accent-purple: #993366;
-  --accent-pink: #ff3399;
-  --glow-yellow: #ff66aa;
-  --text: #ffd1e6;
-  --border: #cc4488;
+:root{
+  /* base */
+  --bg: #0b0b12;
+  --panel-bg: rgba(11,11,18,.96);
+  --text: rgba(245,245,247,.92);
+  --muted: rgba(245,245,247,.70);
 
-  --shadow: rgba(204, 68, 136, 0.4);
-  --shadow-soft: rgba(255, 51, 153, 0.18);
+  /* accents */
+  --violet: #2A0188;
+  --pink: #E1065A;
+  --red: #FF003C;
+  --acid: #ff66aa;
 
-  --panel-bg: rgba(26, 18, 24, 0.95);
-  --panel-radius: 16px;
+  /* lines */
+  --line: rgba(245,245,247,.88);
+  --line-soft: rgba(245,245,247,.18);
+  --stroke: 2px;
+
+  /* spacing */
+  --gap: 8px;
+  --panel-w-min: 280px;
+  --panel-w-max: 360px;
+
+  /* transform helpers */
+  --panel-scale: 1;
+  --panel-shift-x: 0px;
+
+  /* after LCP shadows (offset “sticker”) */
+  --shadow-sticker: 6px 6px 0 rgba(0,0,0,.62);
+  --shadow-sticker-2: 10px 10px 0 rgba(42,1,136,.22);
+  --shadow-soft: 0 10px 26px rgba(0,0,0,.45);
+
+  /* subtle highlight (used AFTER LCP only) */
+  --edge-glow: 0 0 0 2px rgba(255,0,60,.18);
 }
 
 /* =========================================================
-   BASE (до LCP): без blur/сложных теней/анимаций/градиентов
+   BASE (до LCP): максимально лёгко
 ========================================================= */
 
-/* Фон */
 body:has(#ticktock) {
   background: var(--bg) fixed !important;
   color: var(--text) !important;
-  font-family: 'Geist', system-ui, sans-serif !important;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
   overflow: hidden;
   position: relative;
 }
 
-/* Контейнер для бейджа метки (иначе absolute уедет в космос) */
+/* Контейнер для бейджа метки (иначе absolute уедет) */
 body:has(#ticktock) #ticktock section.h-full {
   position: relative !important;
 }
 
-/* Панель статистики */
-.luht-panel {
+/* Панель статистики — brute box, но читабельно */
+.luht-panel{
   position: fixed;
   top: 50%;
-  left: 20px;
-  transform: translateY(-50%);
-  min-width: 280px;
-  max-width: 340px;
-  padding: 14px 16px;
-  border-radius: var(--panel-radius);
+  left: 18px;
+
+  /* ВАЖНО: transform собирается из переменных — hover/adaptive не ломают друг друга */
+  transform: translateY(-50%) translateX(var(--panel-shift-x)) scale(var(--panel-scale));
+
+  min-width: var(--panel-w-min);
+  max-width: var(--panel-w-max);
+  padding: 12px 12px;
+
+  border-radius: 10px;             /* умно: чуть скруглил, чтобы не резало глаз */
   background: var(--panel-bg);
-  border: 2px solid var(--border);
+  border: var(--stroke) solid var(--line);
+
   color: var(--text);
-  font-family: 'Geist', system-ui, sans-serif;
   font-size: 13px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap);
   z-index: 999999;
-  opacity: 0.85;
+  opacity: 0.92;
   max-height: 80vh;
   overflow-y: auto;
 }
@@ -93,99 +116,125 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
 }
 
 .luht-panel:hover { opacity: 1; }
-.luht-panel-paused { opacity: 0.65 !important; }
+.luht-panel-paused { opacity: 0.68 !important; }
 
-.luht-row {
-  display: flex;
+/* Header */
+.luht-header{
+  display:flex;
+  align-items:center;
   justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 6px 8px;
-  border-radius: 10px;
+  gap: 10px;
+  margin-bottom: 2px;
 }
 
-.luht-row-label { opacity: 0.75; }
-.luht-row-value {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.luht-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.luht-title {
+.luht-title{
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 900;
+  letter-spacing: .9px;
   text-transform: uppercase;
-  color: var(--text);
+  color: rgba(245,245,247,.92);
 }
 
-.luht-boost-badge {
+/* Бейдж — “штамп” (без градиентов до LCP) */
+.luht-boost-badge{
   margin-left: 8px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(255, 102, 170, 0.25);
-  border: 1px solid #ff66aa;
-  color: #000;
-  font-size: 10px;
-}
-
-/* Кнопка сброса */
-.luht-btn {
-  background: none;
-  border: 1px solid var(--border);
-  width: 26px;
-  height: 26px;
+  padding: 3px 8px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--glow-yellow);
+  background: rgba(255,0,60,.95);
+  border: var(--stroke) solid rgba(255,0,60,.95);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .8px;
+  text-transform: uppercase;
 }
 
-.luht-btn-longpress {
-  background: rgba(255, 77, 77, 0.3) !important;
-  border-color: #ff4d4d !important;
-  color: #ff4d4d !important;
-  transform: scale(1.1);
+/* Rows — структура + ритм */
+.luht-row{
+  display:flex;
+  justify-content: space-between;
+  align-items:center;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: var(--stroke) solid var(--line-soft);
+  background: transparent;
+  gap: 6px;
+}
+
+.luht-row-label{
+  opacity: .88;
+  text-transform: uppercase;
+  font-weight: 850;
+  letter-spacing: .55px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.luht-row-value{
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: .2px;
+  color: rgba(245,245,247,.95);
+}
+
+.luht-row-warning .luht-row-value{
+  color: rgba(255,0,60,.98) !important;
+}
+
+/* Кнопка сброса — brutal, но не “кирпич” */
+.luht-btn{
+  background: transparent;
+  border: var(--stroke) solid var(--line);
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(245,245,247,.92);
+}
+
+.luht-btn-longpress{
+  background: rgba(255,0,60,.96) !important;
+  border-color: rgba(255,0,60,.96) !important;
+  color: var(--bg) !important;
+  transform: scale(1.06);
 }
 
 /* Freezer button */
-.luht-freezer-btn {
+.luht-freezer-btn{
   position: fixed !important;
-  top: calc(env(safe-area-inset-top, 20px) + 20px) !important;
-  right: 20px !important;
+  top: calc(env(safe-area-inset-top, 20px) + 18px) !important;
+  right: 18px !important;
   width: 56px !important;
   height: 56px !important;
-  font-size: 32px !important;
-  background: rgba(255, 106, 193, 0.35) !important;
-  border: 2px solid #ff6ac1 !important;
-  border-radius: 50% !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
+  font-size: 28px !important;
+
+  background: rgba(42,1,136,.95) !important;
+  border: var(--stroke) solid var(--line) !important;
+
+  border-radius: 14px !important; /* умно: “наклейка”, но не квадрат из 2007 */
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  cursor:pointer !important;
   z-index: 1000001 !important;
+  color: rgba(245,245,247,.95) !important;
 }
 
 /* Freezer panel */
-.luht-freezer-panel {
+.luht-freezer-panel{
   position: fixed !important;
   top: calc(env(safe-area-inset-top, 20px) + 86px) !important;
-  right: 20px !important;
-  width: 340px !important;
+  right: 18px !important;
+  width: 360px !important;
   max-height: 70vh !important;
   background: var(--panel-bg) !important;
-  border: 2px solid var(--border) !important;
-  border-radius: var(--panel-radius) !important;
+  border: var(--stroke) solid var(--line) !important;
+  border-radius: 14px !important;
   padding: 12px !important;
   display: none;
   flex-direction: column;
@@ -193,450 +242,703 @@ body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
   overflow: hidden;
 }
 
-.luht-freezer-header {
-  text-align: center;
-  font-weight: 700;
-  font-size: 14px;
+.luht-freezer-header{
+  text-align:center;
+  font-weight: 950;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   margin-bottom: 10px;
-  color: var(--text);
-  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
-.luht-freezer-list {
-  overflow-y: auto;
+.luht-freezer-list{
+  overflow-y:auto;
   flex: 1;
   padding-right: 4px;
   max-height: calc(70vh - 60px);
 }
 
-.luht-freezer-item {
-  display: block !important;
+.luht-freezer-item{
+  display:block !important;
   padding: 10px 12px !important;
-  margin-bottom: 6px !important;
-  border-radius: 10px !important;
-  background: rgba(153, 51, 102, 0.1) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
+  margin-bottom: 8px !important;
+  border-radius: 12px !important;
+
+  background: rgba(245,245,247,.04) !important;
+  border: var(--stroke) solid rgba(245,245,247,.16) !important;
+
+  color: rgba(245,245,247,.92) !important;
   font-size: 13px !important;
-  text-decoration: none !important;
+  text-decoration:none !important;
+  font-weight: 820 !important;
 }
 
-.luht-freezer-item.active {
-  background: rgba(255, 51, 153, 0.25) !important;
-  border-color: #ff66aa !important;
+.luht-freezer-item.active{
+  border-color: rgba(255,0,60,.95) !important;
+  background: rgba(255,0,60,.08) !important;
 }
 
 /* WatchDog button */
-.luht-watchdog-toggle {
+.luht-watchdog-toggle{
   position: fixed !important;
-  bottom: calc(env(safe-area-inset-bottom, 20px) + 20px) !important;
-  right: 20px !important;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 18px) !important;
+  right: 18px !important;
   width: 56px !important;
   height: 56px !important;
-  font-size: 28px !important;
-  background: rgba(136, 136, 255, 0.35) !important;
-  border: 2px solid #8888ff !important;
-  border-radius: 50% !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
+  font-size: 26px !important;
+
+  background: rgba(255,0,60,.95) !important;
+  border: var(--stroke) solid var(--line) !important;
+
+  border-radius: 14px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  cursor:pointer !important;
   z-index: 1000002 !important;
+  color: var(--bg) !important;
 }
 
 /* Sidebar */
-body:has(#ticktock) aside {
+body:has(#ticktock) aside{
   height: 100vh !important;
   width: 300px !important;
   max-width: 300px !important;
   box-sizing: border-box;
   overflow-y: auto !important;
-  background: rgba(26, 18, 24, 0.96) !important;
-  border-left: 1px solid var(--border);
+  background: rgba(11,11,18,.98) !important;
+  border-left: var(--stroke) solid rgba(245,245,247,.22);
   padding: 16px 16px 22px !important;
-  color: var(--text) !important;
-  font-family: 'Geist', system-ui, sans-serif !important;
+  color: rgba(245,245,247,.92) !important;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
   scrollbar-width: thin;
-  scrollbar-color: var(--accent-pink) var(--secondary);
+  scrollbar-color: rgba(255,0,60,.92) rgba(245,245,247,.12);
 }
 
 /* Image */
-body:has(#ticktock) img[alt="Image to annotate"] {
+body:has(#ticktock) img[alt="Image to annotate"]{
   width: min(1000px, calc(100% - 48px)) !important;
   height: auto !important;
   max-height: calc(100vh - 96px) !important;
   object-fit: contain !important;
-  border-radius: 18px !important;
-  padding: 12px !important;
-  background: var(--bg) !important;
-  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  padding: 10px !important;
+  background: rgba(11,11,18,.55) !important;
+  border: var(--stroke) solid rgba(245,245,247,.22) !important;
 }
 
-/* LAST LABEL badge — ДО LCP: без blur/градиента/тяжёлых теней */
-body:has(#ticktock) .luht-last-label {
+/* LAST LABEL badge — до LCP: штамп, но с характером */
+body:has(#ticktock) .luht-last-label{
   position: absolute;
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 12px 24px;
-  border-radius: 999px;
-  background: rgba(255, 51, 153, 0.18);
-  border: 2px solid #ff66aa;
-  color: var(--text);
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  padding: 10px 18px;
+  border-radius: 999px; /* умно: “сигнал”, читается быстрее */
+  background: rgba(245,245,247,.92);
+  border: var(--stroke) solid rgba(245,245,247,.92);
+  color: var(--bg);
+  font-size: 16px;
+  font-weight: 950;
+  letter-spacing: 1px;
   text-transform: uppercase;
   white-space: nowrap;
   pointer-events: none;
   z-index: 50;
   opacity: 0;
 }
-
-body:has(#ticktock) .luht-last-label.show { opacity: 1; }
+body:has(#ticktock) .luht-last-label.show{ opacity: 1; }
 
 /* =========================================================
-   FULL VIBE (после LCP): разрешаем красивые штуки
+   FULL VIBE (после LCP): умные детали
 ========================================================= */
 
-.lcp-done body:has(#ticktock) {
-  background: radial-gradient(circle at 50% 50%, #241826, #1a1218) fixed !important;
+/* Фон — без радиальных градиентов. Но добавим “текстуру” и акцент */
+.lcp-done body:has(#ticktock){
+  background: var(--bg) fixed !important;
 }
 
-/* фоновые светляки — только после LCP */
-.lcp-done body:has(#ticktock)::before {
-  content: '';
-  position: absolute;
-  inset: 0;
+/* Лёгкий паттерн (дешёвый) + слабый акцентный “уголок” */
+.lcp-done body:has(#ticktock)::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity: .10;
   background:
-    radial-gradient(circle at 30% 40%, rgba(255, 51, 153, 0.12), transparent 70%),
-    radial-gradient(circle at 70% 60%, rgba(255, 102, 170, 0.10), transparent 70%);
-  opacity: 0.8;
-  pointer-events: none;
-  animation: floatLight 20s ease-in-out infinite;
+    linear-gradient(rgba(245,245,247,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,245,247,.14) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
-/* После LCP можно transitions (но аккуратно: не на часто меняемом тексте) */
+/* Маленький акцентный “всплеск” в углу — статичный, без анимаций */
+.lcp-done body:has(#ticktock)::after{
+  content:'';
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity: .12;
+  background:
+    linear-gradient(135deg,
+      rgba(255,0,60,.18) 0%,
+      rgba(42,1,136,.14) 35%,
+      transparent 60%);
+  mix-blend-mode: screen;
+}
+
+/* После LCP можно transitions (но коротко и по делу) */
 .lcp-done .luht-panel,
 .lcp-done .luht-freezer-btn,
 .lcp-done .luht-freezer-panel,
 .lcp-done .luht-freezer-item,
 .lcp-done .luht-btn,
 .lcp-done body:has(#ticktock) .luht-last-label,
-.lcp-done .luht-watchdog-toggle {
-  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease !important;
+.lcp-done .luht-watchdog-toggle{
+  transition: transform .14s ease, opacity .14s ease, box-shadow .14s ease, background .14s ease, border-color .14s ease !important;
 }
 
-/* И вот здесь — включаем hover/transition для sidebar кнопок и списка задач */
+/* И для sidebar */
 .lcp-done body:has(#ticktock) aside button[name="label"],
 .lcp-done body:has(#ticktock) aside a[href*="/queue/"],
-.lcp-done body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
-  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease !important;
+.lcp-done body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]{
+  transition: transform .12s ease, background .12s ease, border-color .12s ease, box-shadow .12s ease !important;
 }
 
-.lcp-done .luht-panel {
-  background: linear-gradient(135deg, rgba(255, 51, 153, 0.12), rgba(204, 68, 136, 0.12)), var(--panel-bg);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 0 0 2px var(--border),
-    0 6px 18px var(--shadow),
-    0 0 40px var(--shadow-soft),
-    inset 0 0 20px rgba(255, 51, 153, 0.12);
+/* Panel — offset shadow + лёгкая глубина (без blur) */
+.lcp-done .luht-panel{
+  box-shadow: var(--shadow-sticker), var(--shadow-soft);
 }
 
-.lcp-done .luht-panel:hover {
-  opacity: 1 !important;
-  box-shadow:
-    0 0 0 3px #ff66aa,
-    0 12px 40px rgba(0,0,0,0.9),
-    0 0 80px rgba(255, 51, 153, 0.5),
-    inset 0 0 50px rgba(255, 51, 153, 0.3);
+/* hover: просто сдвиг, без перезаписи scale (переменная!) */
+.lcp-done .luht-panel:hover{
+  --panel-shift-x: -2px;
+  box-shadow: var(--shadow-sticker-2), var(--shadow-soft), var(--edge-glow);
 }
 
-.lcp-done .luht-row {
-  background: rgba(255, 51, 153, 0.08);
-  border: 1px solid var(--border);
-}
-
-.lcp-done .luht-title,
-.lcp-done .luht-freezer-header {
-  background: linear-gradient(120deg, var(--accent-purple), var(--accent-pink), var(--glow-yellow));
-  background-size: 200% 200%;
+/* Заголовок — вернём “деталь”, но без тяжёлого неона */
+.lcp-done .luht-title{
+  background: linear-gradient(120deg, rgba(245,245,247,.96), rgba(255,102,170,.92), rgba(245,245,247,.90));
   -webkit-background-clip: text;
   background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: luhtGradientMove 8s ease infinite;
-  text-shadow: 0 1px 6px rgba(0,0,0,0.7), 0 0 10px rgba(255, 51, 153, 0.5);
+  color: transparent;
 }
 
-.lcp-done .luht-boost-badge { animation: luhtPulse 1s ease-in-out infinite alternate; }
-
-.lcp-done .luht-row-warning .luht-row-value {
-  color: var(--glow-yellow) !important;
-  animation: luhtPulse 1.5s ease-in-out infinite alternate;
+/* Rows — подчёркиваем структуру + подсветка границы */
+.lcp-done .luht-row{
+  border-color: rgba(245,245,247,.26);
+  background: rgba(245,245,247,.03);
+}
+.lcp-done .luht-row:hover{
+  border-color: rgba(42,1,136,.72);
+  box-shadow: 4px 4px 0 rgba(42,1,136,.16);
 }
 
-.lcp-done .luht-freezer-btn {
-  box-shadow: 0 4px 20px rgba(255, 51, 153, 0.5), 0 0 20px rgba(255, 102, 170, 0.3);
-  animation: subtlePulse 4s ease-in-out infinite;
-}
-
-.lcp-done .luht-freezer-btn:hover {
-  animation: none;
-  transform: translateY(-3px) scale(1.1);
-  box-shadow: 0 8px 30px rgba(255, 51, 153, 0.7);
-}
-
-.lcp-done .luht-freezer-panel {
-  background: linear-gradient(135deg, rgba(255, 51, 153, 0.15), rgba(204, 68, 136, 0.15)), var(--panel-bg) !important;
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 0 0 2px var(--border),
-    0 8px 32px rgba(0,0,0,0.6),
-    0 0 40px var(--shadow-soft),
-    inset 0 0 30px rgba(255, 51, 153, 0.12);
-  animation: freezerFadeIn 0.25s ease;
-}
-
-.lcp-done .luht-freezer-item:hover {
-  background: rgba(153, 51, 102, 0.25) !important;
-  border-color: var(--accent-pink) !important;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px var(--shadow);
-}
-
-.lcp-done .luht-btn:hover {
-  background: rgba(153, 51, 102, 0.15);
-  transform: scale(1.05);
-  box-shadow: 0 0 12px var(--shadow);
-}
-
-.lcp-done .luht-btn:active { transform: scale(0.95); }
-
-.lcp-done .luht-btn-longpress {
-  box-shadow: 0 0 20px rgba(255, 77, 77, 0.7);
-  animation: luhtPulseRed 0.4s ease-in-out infinite alternate;
-}
-
-.lcp-done body:has(#ticktock) aside {
-  backdrop-filter: blur(20px);
-  box-shadow: inset 0 0 20px rgba(153, 51, 102, 0.15);
-}
-
-.lcp-done body:has(#ticktock) aside button[name="label"]:hover,
-.lcp-done body:has(#ticktock) aside a[href*="/queue/"]:hover {
+/* Buttons: micro-interactions */
+.lcp-done .luht-btn:hover{
+  border-color: rgba(225,6,90,.92);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px var(--shadow);
+  box-shadow: 4px 4px 0 rgba(225,6,90,.18);
+}
+.lcp-done .luht-btn:active{
+  transform: translateY(0px) scale(.98);
+}
+.lcp-done .luht-btn-longpress{
+  box-shadow: 6px 6px 0 rgba(255,0,60,.22);
 }
 
-.lcp-done body:has(#ticktock) img[alt="Image to annotate"] {
-  box-shadow:
-    0 0 0 1px var(--border),
-    0 22px 60px rgba(0, 0, 0, 0.9),
-    0 0 40px var(--shadow-soft) !important;
+/* Freezer/Watchdog — “наклейка” */
+.lcp-done .luht-freezer-btn,
+.lcp-done .luht-watchdog-toggle{
+  box-shadow: var(--shadow-sticker);
+}
+.lcp-done .luht-freezer-btn:hover,
+.lcp-done .luht-watchdog-toggle:hover{
+  transform: translateY(-2px) translateX(-2px);
+  box-shadow: var(--shadow-sticker-2);
 }
 
-/* LAST LABEL badge — после LCP: жирный неон */
-.lcp-done body:has(#ticktock) .luht-last-label {
-  background: linear-gradient(135deg, #ff3399, #ff99cc, #ff66aa);
-  backdrop-filter: blur(20px);
-  border: 4px solid #ff66aa;
-  color: #000;
-  font-size: 26px;
-  padding: 16px 40px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-  box-shadow:
-    0 0 50px rgba(255, 51, 153, 1),
-    0 0 90px rgba(255, 102, 170, 0.8),
-    0 20px 60px rgba(0, 0, 0, 0.9);
+/* Freezer panel */
+.lcp-done .luht-freezer-panel{
+  box-shadow: var(--shadow-sticker), var(--shadow-soft);
+}
 
+/* Freezer item hover — аккуратный “удар” */
+.lcp-done .luht-freezer-item:hover{
+  border-color: rgba(225,6,90,.92) !important;
+  background: rgba(225,6,90,.06) !important;
+  transform: translateY(-1px);
+  box-shadow: 4px 4px 0 rgba(225,6,90,.16);
+}
+
+/* LAST LABEL — “штамп” с ударом */
+.lcp-done body:has(#ticktock) .luht-last-label{
+  background: rgba(245,245,247,.95);
+  border-color: rgba(245,245,247,.95);
+  box-shadow: 10px 10px 0 rgba(255,0,60,.22);
   opacity: 0;
-  transform: translateX(-50%) translateY(20px) scale(0.9);
+  transform: translateX(-50%) translateY(14px);
 }
-
-.lcp-done body:has(#ticktock) .luht-last-label.show {
+.lcp-done body:has(#ticktock) .luht-last-label.show{
   opacity: 1;
-  transform: translateX(-50%) translateY(0) scale(1);
-  animation: badgePulseAppear 0.8s ease-out;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* GPU hints после LCP */
 .lcp-done .luht-panel,
 .lcp-done .luht-freezer-btn,
-.lcp-done .luht-boost-badge,
 .lcp-done .luht-last-label,
-.lcp-done .luht-watchdog-toggle {
+.lcp-done .luht-watchdog-toggle{
   will-change: transform, opacity, box-shadow;
 }
 
 /* =========================================================
-   Site buttons / labels (всегда)
+   Site buttons / labels (всегда): brutal, но с иерархией
 ========================================================= */
 
-body:has(#ticktock) aside button[name="label"][aria-selected="true"] {
-  background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)) !important;
-  color: #000 !important;
-  border: none !important;
-  font-weight: 700 !important;
-  box-shadow: 0 0 20px rgba(255, 51, 153, 0.5);
-}
-
 body:has(#ticktock) aside button[name="label"],
-body:has(#ticktock) aside a[href*="/queue/"] {
-  display: block !important;
+body:has(#ticktock) aside a[href*="/queue/"]{
+  display:block !important;
   width: 100% !important;
-  text-align: left;
-  margin-bottom: 5px;
+  text-align:left;
+  margin-bottom: 8px;
   padding: 10px 12px !important;
-  border-radius: 10px !important;
-  background: rgba(153, 51, 102, 0.1) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
+  border-radius: 12px !important;
+  background: rgba(245,245,247,.03) !important;
+  border: var(--stroke) solid rgba(245,245,247,.18) !important;
+  color: rgba(245,245,247,.92) !important;
   font-size: 13px !important;
-  font-weight: 500 !important;
+  font-weight: 850 !important;
+  letter-spacing: .2px;
 }
 
-body:has(#ticktock) aside button[name="label"]:active { transform: scale(0.95); }
+body:has(#ticktock) aside button[name="label"][aria-selected="true"]{
+  background: rgba(255,0,60,.95) !important;
+  border-color: rgba(255,0,60,.95) !important;
+  color: var(--bg) !important;
+  font-weight: 950 !important;
+  box-shadow: 6px 6px 0 rgba(0,0,0,.55);
+}
 
-/* Скрытие ненужного */
+.lcp-done body:has(#ticktock) aside button[name="label"]:hover,
+.lcp-done body:has(#ticktock) aside a[href*="/queue/"]:hover{
+  transform: translateY(-1px);
+  border-color: rgba(42,1,136,.72) !important;
+  box-shadow: 4px 4px 0 rgba(42,1,136,.18);
+}
+
+body:has(#ticktock) aside button[name="label"]:active{
+  transform: scale(.98);
+}
+
+/* Скрытие ненужного — как было */
 body:has(#ticktock) aside h2:nth-of-type(2),
 body:has(#ticktock) aside h2:nth-of-type(2) + div,
 body:has(#ticktock) aside h2:nth-of-type(3),
 body:has(#ticktock) aside h2:nth-of-type(3) + div,
 body:has(#ticktock) aside h2:nth-of-type(4),
-body:has(#ticktock) aside h2:nth-of-type(4) + div {
-  display: none !important;
+body:has(#ticktock) aside h2:nth-of-type(4) + div{
+  display:none !important;
 }
 
 /* Scrollbar */
-body:has(#ticktock) aside::-webkit-scrollbar { width: 8px; }
-body:has(#ticktock) aside::-webkit-scrollbar-track { background: var(--secondary); }
-body:has(#ticktock) aside::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--accent-pink), var(--accent-purple));
+body:has(#ticktock) aside::-webkit-scrollbar{ width: 8px; }
+body:has(#ticktock) aside::-webkit-scrollbar-track{ background: rgba(245,245,247,.08); }
+body:has(#ticktock) aside::-webkit-scrollbar-thumb{
+  background: rgba(255,0,60,.92);
   border-radius: 10px;
 }
 
-/* Tasks list page */
-body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"] {
-  display: block !important;
+/* Tasks list page — карточки “умный brutal” */
+body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]{
+  display:block !important;
   padding: 14px 16px !important;
-  background: rgba(18, 18, 24, 0.98) !important;
-  border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  color: #f0f0f0 !important;
-  text-decoration: none !important;
+  background: rgba(245,245,247,.03) !important;
+  border-radius: 14px !important;
+  border: var(--stroke) solid rgba(245,245,247,.18) !important;
+  color: rgba(245,245,247,.92) !important;
+  text-decoration:none !important;
+  font-weight: 850;
 }
 
-body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover {
-  background: rgba(28, 28, 36, 1) !important;
-  border-color: rgba(255, 255, 255, 0.18) !important;
+.lcp-done body:has([hx-get="/v2/tasks/list/"]) a[href*="/v2/task/"]:hover{
+  border-color: rgba(42,1,136,.72) !important;
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 6px 6px 0 rgba(42,1,136,.18);
 }
 
-/* Responsive */
+/* Responsive — только меняем переменные, не ломаем hover */
 @media (max-width: 1200px) {
-  .luht-panel {
+  .luht-panel{
     left: 10px;
     min-width: 240px;
     font-size: 12px;
   }
   .luht-freezer-btn,
-  .luht-watchdog-toggle {
+  .luht-watchdog-toggle{
     right: 10px;
   }
 }
 
 @media (max-width: 900px) {
-  .luht-panel {
-    left: 5px;
-    transform: translateY(-50%) scale(0.9);
+  .luht-panel{
+    left: 6px;
+    --panel-scale: .92;
   }
 }
 
-/* Finish page — оставляем вайб (это уже не LCP на странице разметки) */
-body > div.flex {
-  background: linear-gradient(135deg, rgba(153,51,102,0.2), rgba(255,51,153,0.2)), rgba(26,18,24,0.85);
-  padding: 40px 24px;
-  border-radius: 20px;
-  box-shadow:
-    0 0 12px rgba(204,68,136,0.3),
-    0 12px 40px rgba(0,0,0,0.85),
-    inset 0 0 20px rgba(255,51,153,0.1);
-  max-width: 600px;
+/* Finish page — оставим сочность, но без анимаций/blur */
+body > div.flex{
+  background: rgba(11,11,18,.92);
+  padding: 36px 22px;
+  border-radius: 16px;
+  border: var(--stroke) solid rgba(245,245,247,.22);
+  box-shadow: 12px 12px 0 rgba(255,0,60,.16);
+  max-width: 620px;
   margin: 60px auto;
-  text-align: center;
+  text-align:center;
   position: relative;
 }
 
-body > div.flex::before {
-  content: '';
-  position: absolute;
-  top: -40%;
-  left: -30%;
-  width: 160%;
-  height: 160%;
-  background: radial-gradient(circle, rgba(255,51,153,0.1), transparent 70%);
-  animation: floatLight 25s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 0;
-}
-
-body > div.flex * { position: relative; z-index: 1; }
-
-body > div.flex svg { stroke: #ff3399; filter: drop-shadow(0 0 12px #ff3399); }
-body > div.flex h2 {
-  font-size: 2.5rem;
-  font-weight: 700;
-  background: linear-gradient(120deg, #993366, #ff3399, #ff66aa);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: luhtGradientMove 8s ease infinite;
+body > div.flex svg{ stroke: rgba(255,0,60,.95); filter: none; }
+body > div.flex h2{
+  font-size: 2.2rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .6px;
   margin-top: 16px;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  color: rgba(245,245,247,.95);
 }
-body > div.flex p { margin-top: 12px; font-size: 1.125rem; color: #ffd1e6cc; }
-body > div.flex a { color: #ff66aa; font-weight: 600; text-decoration: none; }
-body > div.flex a:hover { color: #ff3399; text-shadow: 0 0 6px #ff3399; }
+body > div.flex p{ margin-top: 12px; font-size: 1.05rem; color: rgba(245,245,247,.72); }
+body > div.flex a{ color: rgba(245,245,247,.92); font-weight: 900; text-decoration: underline; }
+body > div.flex a:hover{ color: rgba(225,6,90,.95); }
 
-/* =========================================================
-   Animations
-========================================================= */
-@keyframes luhtGradientMove {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
+/* =========================
+   LUHT v3 — PATCH (neo-brutal polish)
+   Вставь в самый конец файла
+========================= */
 
-@keyframes luhtPulse {
-  from { opacity: 0.7; transform: scale(1); }
-  to   { opacity: 1; transform: scale(1.02); }
+/* 1) mix-blend-mode может быть дорогим. Делаем проще и дешевле */
+.lcp-done body:has(#ticktock)::after{
+  /* было: mix-blend-mode: screen; */
+  mix-blend-mode: normal;
+  opacity: .10;
 }
 
-@keyframes luhtPulseRed {
-  from { box-shadow: 0 0 20px rgba(255, 77, 77, 0.7); }
-  to   { box-shadow: 0 0 30px rgba(255, 77, 77, 0.9); }
+/* 2) Градиент в заголовке — это скорее "глянец", чем brutal.
+      Делаем “штамп”: подчерк + акцентная метка */
+.lcp-done .luht-title{
+  background: none !important;
+  color: rgba(245,245,247,.95) !important;
+  position: relative;
+  padding-left: 10px;
+}
+.lcp-done .luht-title::before{
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 70%;
+  transform: translateY(-50%);
+  background: rgba(255,0,60,.92);
+  border-radius: 3px;
 }
 
-@keyframes subtlePulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
+/* 3) Панель: добавим переменную для Y-сдвига, чтобы hover был “живой”
+      и при этом scale не ломался */
+:root{
+  --panel-shift-y: 0px;
+}
+.luht-panel{
+  transform: translateY(calc(-50% + var(--panel-shift-y)))
+            translateX(var(--panel-shift-x))
+            scale(var(--panel-scale));
+}
+.lcp-done .luht-panel:hover{
+  --panel-shift-x: -2px;
+  --panel-shift-y: -2px;
 }
 
-@keyframes floatLight {
-  0%   { transform: translate(0, 0); }
-  50%  { transform: translate(20px, -20px); }
-  100% { transform: translate(0, 0); }
+/* 4) Чуть подкрутить контраст бордеров: на некоторых дисплеях line-soft слишком “никакой” */
+.luht-row{
+  border-color: rgba(245,245,247,.22);
+}
+.lcp-done .luht-row{
+  border-color: rgba(245,245,247,.30);
 }
 
-@keyframes badgePulseAppear {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(40px) scale(0.8); box-shadow: 0 0 0 rgba(255, 51, 153, 0); }
-  60%  { transform: translateX(-50%) translateY(-12px) scale(1.08); }
-  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); box-shadow: 0 0 60px rgba(255, 51, 153, 0.9); }
+/* 5) Freezer item: hover-эффект норм, но лучше не трогать layout слишком резко.
+      Оставим translateY(-1px), но фиксируем box-shadow чтоб выглядел “плакатно” */
+.lcp-done .luht-freezer-item:hover{
+  box-shadow: 5px 5px 0 rgba(225,6,90,.14);
 }
 
-@keyframes freezerFadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* 6) Sidebar selected: ок, но добавим “стикерный” бордер, чтобы не выглядел просто заливкой */
+body:has(#ticktock) aside button[name="label"][aria-selected="true"]{
+  border-color: rgba(245,245,247,.92) !important;
+}
+
+/* 7) Кнопки: у тебя offset shadow есть, но на active чуть жёстче “нажатие” */
+.lcp-done .luht-freezer-btn:active,
+.lcp-done .luht-watchdog-toggle:active{
+  transform: translateY(0px) translateX(0px) scale(.98);
+  box-shadow: 3px 3px 0 rgba(0,0,0,.55);
+}
+
+/* Freezer open/close state (управление через класс, не инлайн) */
+.luht-freezer-panel { opacity: 0; transform: translateY(14px); }
+.luht-freezer-panel.is-open { opacity: 1; transform: translateY(0); }
+
+/* ДО LCP у тебя transition отключены глобально — значит всё мгновенно.
+   ПОСЛЕ LCP transitions включаются — и это станет мягким, как надо. */
+
+.luht-freezer-empty{
+  text-align:center;
+  padding: 18px;
+  color: rgba(245,245,247,.65);
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+.luht-toast{
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  z-index: 1000003;
+
+  background: rgba(245,245,247,.95);
+  color: #0b0b12;
+  border: 2px solid rgba(245,245,247,.92);
+  border-radius: 12px;
+
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .3px;
+
+  opacity: 0;
+  box-shadow: 10px 10px 0 rgba(255,0,60,.18);
+}
+
+.lcp-done .luht-toast{ transition: opacity .14s ease, transform .14s ease; }
+
+.luht-toast.show{
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== Freezer UI state machine (no inline styles) ===== */
+
+/* по умолчанию скрыто */
+.luht-freezer-panel{
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  transform: translateY(14px) !important;
+}
+
+/* открыто */
+.luht-freezer-panel.is-open{
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+/* после LCP — анимации, до LCP они и так отключены глобально */
+.lcp-done .luht-freezer-panel{
+  transition: opacity .14s ease, transform .14s ease !important;
+}
+
+/* header/list — если вдруг сайт их стилит */
+.luht-freezer-header{
+  padding: 14px 16px !important;
+  border-bottom: var(--stroke) solid rgba(245,245,247,.14) !important;
+}
+.luht-freezer-list{
+  padding: 10px !important;
+}
+
+/* элементы списка */
+.luht-freezer-item{
+  display: block !important;
+  padding: 10px 12px !important;
+  margin: 6px 0 !important;
+  border-radius: 12px !important;
+  text-decoration: none !important;
+
+  color: rgba(245,245,247,.92) !important;
+  background: rgba(245,245,247,.03) !important;
+  border: var(--stroke) solid rgba(245,245,247,.18) !important;
+
+  font-size: 14px !important;
+  line-height: 1.25 !important;
+  word-break: break-word !important;
+  font-weight: 850 !important;
+}
+
+/* hover — только после LCP (до LCP у тебя transition none, но hover может мигать — нормально) */
+.lcp-done .luht-freezer-item:hover{
+  transform: translateY(-1px) !important;
+  border-color: rgba(42,1,136,.72) !important;
+  box-shadow: 6px 6px 0 rgba(42,1,136,.18) !important;
+  background: rgba(42,1,136,.08) !important;
+}
+
+/* active — удар красным */
+.luht-freezer-item.active{
+  border-color: rgba(255,0,60,.95) !important;
+  background: rgba(255,0,60,.08) !important;
+}
+
+/* заглушка */
+.luht-freezer-empty{
+  text-align:center;
+  padding: 18px;
+  color: rgba(245,245,247,.65);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: .2px;
+}
+
+/* ===== Tasks page ( /v2/tasks/ ) ===== */
+body:has([hx-get="/v2/tasks/list/"]) {
+  background: var(--bg) fixed !important;
+  color: var(--text) !important;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif !important;
+}
+
+/* карточки-линки задач у тебя уже есть, но можно усилить контейнер */
+body:has([hx-get="/v2/tasks/list/"]) h1 {
+  color: rgba(245,245,247,.92) !important;
+  letter-spacing: .2px;
+}
+
+body:has([hx-get="/v2/tasks/list/"]) [hx-get="/v2/stats/"],
+body:has([hx-get="/v2/tasks/list/"]) [hx-get="/v2/tasks/list/"]{
+  padding: 0 12px 12px !important;
+}
+/* WATCHDOG: base */
+.luht-watchdog-toggle{
+  position: fixed !important;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 18px) !important;
+  right: 18px !important;
+  width: 56px !important;
+  height: 56px !important;
+  font-size: 26px !important;
+
+  border-radius: 14px !important;
+  border: var(--stroke) solid var(--line) !important;
+  background: rgba(255,0,60,.95) !important;
+  color: var(--bg) !important;
+
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  cursor:pointer !important;
+  z-index: 1000002 !important;
+}
+
+.luht-watchdog-toggle.is-on{
+  transform: scale(1.06);
+}
+
+/* panel */
+.luht-watchdog-panel{
+  position: fixed !important;
+  bottom: calc(env(safe-area-inset-bottom, 20px) + 86px) !important;
+  right: 18px !important;
+
+  width: min(460px, calc(100vw - 40px)) !important;
+  max-height: 70vh !important;
+
+  background: var(--panel-bg) !important;
+  border: var(--stroke) solid var(--line) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  z-index: 1000001 !important;
+
+  display: none;
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.luht-watchdog-header{
+  padding: 12px 14px !important;
+  background: rgba(245,245,247,.92) !important;
+  color: var(--bg) !important;
+  font-weight: 950 !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+  display:flex !important;
+  justify-content: space-between !important;
+  align-items:center !important;
+  border-bottom: var(--stroke) solid rgba(245,245,247,.18) !important;
+}
+
+.luht-watchdog-title{ font-size: 12px !important; }
+
+.luht-watchdog-close{
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: var(--stroke) solid rgba(11,11,18,.25);
+  background: transparent;
+  color: var(--bg);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.luht-watchdog-controls{
+  padding: 10px 14px !important;
+  display:flex !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  background: rgba(245,245,247,.03) !important;
+  border-bottom: var(--stroke) solid rgba(245,245,247,.12) !important;
+}
+
+.luht-watchdog-btn{
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
+  border: var(--stroke) solid rgba(245,245,247,.22) !important;
+  background: rgba(245,245,247,.03) !important;
+  color: rgba(245,245,247,.92) !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+
+.luht-watchdog-btn-primary{
+  background: rgba(42,1,136,.95) !important;
+  border-color: var(--line) !important;
+  color: rgba(245,245,247,.95) !important;
+}
+
+.luht-watchdog-body{
+  padding: 12px 14px !important;
+  overflow-y: auto !important;
+  max-height: calc(70vh - 110px) !important;
+  color: rgba(245,245,247,.92) !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace !important;
+  font-size: 12.5px !important;
+}
+
+/* AFTER LCP micro-vibe */
+.lcp-done .luht-watchdog-toggle{
+  box-shadow: var(--shadow-sticker) !important;
+}
+.lcp-done .luht-watchdog-panel{
+  box-shadow: var(--shadow-sticker), var(--shadow-soft) !important;
+}
+.lcp-done .luht-watchdog-toggle:hover{
+  transform: translateY(-2px) translateX(-2px) !important;
+  box-shadow: var(--shadow-sticker-2) !important;
+}
+.lcp-done .luht-watchdog-btn:hover{
+  transform: translateY(-1px) !important;
+  border-color: rgba(225,6,90,.92) !important;
+  box-shadow: 4px 4px 0 rgba(225,6,90,.16) !important;
 }

@@ -5,199 +5,145 @@
   const S = ns.state;
 
   const ENABLE_KEY = 'imageTurboEnabled';
+  const META_KEY = 'luhtTurboMetaV3';   // { [url]: ts }
+  const TTL_MS = 20 * 60 * 1000;        // 20 минут
+  const MAX_TRACKED = 500;              // только учёт, не реальный кеш
 
   function isEnabled() {
-    try {
-      return localStorage.getItem(ENABLE_KEY) === 'true';
-    } catch {
-      return false;
-    }
+    try { return localStorage.getItem(ENABLE_KEY) === 'true'; } catch { return false; }
   }
-
   function setEnabled(on) {
-    try {
-      localStorage.setItem(ENABLE_KEY, on ? 'true' : 'false');
-    } catch {}
+    try { localStorage.setItem(ENABLE_KEY, on ? 'true' : 'false'); } catch {}
   }
 
-  // Проверяет, находится ли Image Turbo в режиме временного отключения (cooldown)
-  ns.isTurboInCooldown = function () {
-    try {
-      const ts = Number(localStorage.getItem(ns.TURBO_DEAD_TS_KEY) || '0');
-      return ts && Date.now() - ts < ns.TURBO_COOLDOWN_MS;
-    } catch {
-      return false;
+  function readMeta() {
+    try { return JSON.parse(localStorage.getItem(META_KEY) || '{}') || {}; } catch { return {}; }
+  }
+  function writeMeta(meta) {
+    try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch {}
+  }
+
+  function gcMeta(meta) {
+    const now = Date.now();
+    // TTL
+    for (const k of Object.keys(meta)) {
+      if (now - (meta[k] || 0) > TTL_MS) delete meta[k];
     }
-  };
+    // size
+    const keys = Object.keys(meta);
+    if (keys.length > MAX_TRACKED) {
+      keys.sort((a,b) => (meta[a]||0) - (meta[b]||0));
+      for (let i = 0; i < keys.length - MAX_TRACKED; i++) delete meta[keys[i]];
+    }
+  }
 
-  // Устанавливает метку времени начала cooldown (текущее время)
-  ns.setTurboCooldown = function () {
+  function canPrefetchNow() {
     try {
-      localStorage.setItem(ns.TURBO_DEAD_TS_KEY, String(Date.now()));
-    } catch {}
-  };
+      if (document.visibilityState !== 'visible') return false;
+      const c = navigator.connection;
+      if (!c) return true;
+      if (c.saveData) return false;
+      const et = (c.effectiveType || '').toLowerCase();
+      if (et.includes('2g')) return false;
+      return true;
+    } catch { return true; }
+  }
 
-  // Сбрасывает (отменяет) состояние cooldown
-  ns.clearTurboCooldown = function () {
-    try {
-      localStorage.removeItem(ns.TURBO_DEAD_TS_KEY);
-    } catch {}
-  };
-
-  // Возвращает текущий элемент изображения задания (которое нужно размечать)
   ns.getCurrentImage = function () {
     try {
-      if (S.currentImg && (document.body || document.documentElement).contains(S.currentImg)) {
-        return S.currentImg;
-      }
+      if (S.currentImg && (document.body || document.documentElement).contains(S.currentImg)) return S.currentImg;
     } catch {}
-
     S.currentImg = document.querySelector('img[alt="Image to annotate"]');
     return S.currentImg;
   };
 
-  // Создаёт переключатель (чекбокс) для режима Image Turbo в панели статистики
-  ns.createTurboToggle = function (rowsContainer) {
-    if (!rowsContainer) return;
+  // UI toggle оставь свой; главное — чтобы ns.applyImageTurbo вызывался.
+  // Я тут только статус обновляю, если он есть:
+  function setStatus(text, opacity=1) {
+    if (!S.turboIcon) return;
+    S.turboIcon.textContent = text;
+    S.turboIcon.style.opacity = String(opacity);
+  }
 
-    // чтобы не создать второй раз (если панель пересобирается)
-    if (S.turboRow && rowsContainer.contains(S.turboRow)) return;
+  function extractAnnotateImgSrc(html) {
+    const m = html.match(/<img[^>]+alt="Image to annotate"[^>]+src="([^"]+)"/i);
+    return m?.[1] || null;
+  }
 
-    // Обертка для строки переключателя
-    const turboRow = document.createElement('div');
-    turboRow.className = 'luht-row luht-turbo-row';
+  function getNextLink() {
+    const a = document.querySelector('a[href*="/next/"]');
+    return a?.href || null;
+  }
 
-    const label = document.createElement('span');
-    label.className = 'luht-row-label';
-    label.textContent = 'Image Turbo';
+  // ВАЖНО: preload через Image, а не CacheStorage
+  function preloadImage(url) {
+    return new Promise((resolve) => {
+      try {
+        const u = new URL(url, location.href);
+        if (u.origin !== location.origin) return resolve(false);
 
-    const wrapper = document.createElement('div');
-    wrapper.style.display = 'flex';
-    wrapper.style.alignItems = 'center';
-    wrapper.style.gap = '10px';
-
-    // Чекбокс переключения
-    const toggle = document.createElement('input');
-    toggle.type = 'checkbox';
-    toggle.id = 'image-turbo-toggle';
-    const enabled = isEnabled();
-    toggle.checked = enabled;
-
-    // Подпись-состояние (вкл/выкл)
-    const status = document.createElement('span');
-    status.style.fontSize = '14px';
-    status.style.transition = 'opacity 0.3s ease';
-
-    function setStatusText(on, mode) {
-      // mode: 'ok' | 'off' | 'cooldown' | 'fail'
-      if (!status) return;
-      if (!on) {
-        status.textContent = 'Выключено';
-        status.style.opacity = '0.5';
-        return;
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = u.toString();
+      } catch {
+        resolve(false);
       }
-      if (mode === 'cooldown') {
-        status.textContent = 'Недоступно (таймаут)';
-        status.style.opacity = '0.6';
-        return;
-      }
-      if (mode === 'fail') {
-        status.textContent = 'Недоступно (временно)';
-        status.style.opacity = '0.6';
-        return;
-      }
-      status.textContent = '💨 Активно';
-      status.style.opacity = '1';
-    }
-
-    setStatusText(enabled, ns.isTurboInCooldown() ? 'cooldown' : 'ok');
-
-    // Обработчик изменения чекбокса
-    let debounceTimer = null;
-    toggle.addEventListener('change', () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const on = !!toggle.checked;
-        setEnabled(on);
-        if (on) ns.clearTurboCooldown();
-        setStatusText(on, ns.isTurboInCooldown() ? 'cooldown' : 'ok');
-        ns.applyImageTurbo();
-      }, 120);
     });
+  }
 
-    wrapper.appendChild(toggle);
-    wrapper.appendChild(status);
-    turboRow.appendChild(label);
-    turboRow.appendChild(wrapper);
-    rowsContainer.appendChild(turboRow);
+  async function prefetchNextImage() {
+    const nextHref = getNextLink();
+    if (!nextHref) return false;
 
-    // Сохраняем ссылки на элементы для использования при обновлениях
-    S.turboRow = turboRow;
-    S.turboToggle = toggle;
-    S.turboIcon = status;
-  };
+    const res = await fetch(nextHref, { credentials: 'include' });
+    if (!res.ok) return false;
 
-  // Применяет Turbo-оптимизацию к текущему изображению (замена на WebP через прокси)
-  ns.applyImageTurbo = function () {
+    const html = await res.text();
+    const src = extractAnnotateImgSrc(html);
+    if (!src) return false;
+
+    const abs = new URL(src, location.href).toString();
+    return await preloadImage(abs);
+  }
+
+  ns.applyImageTurbo = async function () {
     if (!isEnabled()) return;
 
-    // если в cooldown — обновим статус и выйдем
-    if (ns.isTurboInCooldown()) {
-      if (S.turboIcon) {
-        S.turboIcon.textContent = 'Недоступно (таймаут)';
-        S.turboIcon.style.opacity = '0.6';
-      }
+    if (!canPrefetchNow()) {
+      setStatus('💨 Turbo: пауза (сеть)', 0.7);
       return;
     }
 
     const img = ns.getCurrentImage();
-    if (!img) return;
+    if (!img?.src) return;
 
-    // не трогаем уже обработанное
-    if (img.dataset.webpOptimized === 'true' || img.dataset.webpOptimized === 'fail') return;
+    // не повторяемся на одном и том же изображении
+    if (img.dataset.turboSeen === img.src) return;
+    img.dataset.turboSeen = img.src;
 
-    const originalSrc = img.src;
-    if (!originalSrc || originalSrc.endsWith('.webp') || originalSrc.endsWith('.svg')) return;
+    const meta = readMeta();
+    gcMeta(meta);
 
-    // Формируем URL через прокси wsrv.nl (WebP формат, с ресайзом)
-    const width = Math.min(1600, Math.floor(window.innerWidth * 1.5));
-    const proxyUrl = `https://wsrv.nl/?url=${encodeURIComponent(originalSrc)}&w=${width}&q=87&output=webp&fit=contain`;
+    const now = Date.now();
 
-    const preload = new Image();
+    // 1) preload текущей (часто уже загружена, но пусть)
+    if (!meta[img.src]) {
+      meta[img.src] = now;
+      writeMeta(meta);
+      setStatus('💨 Turbo: preload current…', 0.9);
+      await preloadImage(img.src);
+    }
 
-    preload.onload = () => {
-      // если за время загрузки картинка сменилась — не ломаем новую
-      const current = ns.getCurrentImage();
-      if (!current || current !== img) return;
+    // 2) preload next (главный буст)
+    setStatus('💨 Turbo: preload next…', 0.9);
+    const ok = await prefetchNextImage();
+    setStatus(ok ? '💨 Turbo: next готов' : '⚠️ Turbo: next не вышел', ok ? 1 : 0.7);
 
-      img.src = proxyUrl;
-      img.dataset.webpOptimized = 'true';
-
-      ns.clearTurboCooldown();
-
-      if (S.turboIcon) {
-        S.turboIcon.textContent = '💨 Активно';
-        S.turboIcon.style.opacity = '1';
-      }
-    };
-
-    preload.onerror = () => {
-      img.dataset.webpOptimized = 'fail';
-      ns.setTurboCooldown();
-
-      if (S.turboIcon) {
-        S.turboIcon.textContent = 'Недоступно (временно)';
-        S.turboIcon.style.opacity = '0.6';
-      }
-
-      if (typeof ns.showToast === 'function') {
-        ns.showToast('Image Turbo временно недоступен. Поставлен таймаут.', 2200);
-      }
-
-      // Возвращаем оригинальный src, если был изменён (на всякий)
-      if (img.src !== originalSrc) img.src = originalSrc;
-    };
-
-    preload.src = proxyUrl;
+    // записываем “я это уже пробовал недавно”
+    meta['__last'] = now;
+    writeMeta(meta);
   };
-})(window.LUHT.freezer);
+
+})(window.LUHT?.freezer || {});
